@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Matematika.uz</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../css/style.css" />
+  </head>
+  <body>
+    <nav>
+      <div class="nav-logo">
+        <div class="logo-icon">MU</div>
+        <div class="logo-text">
+          <h2>matematika.uz</h2>
+          <p>test platformasi</p>
+        </div>
+      </div>
+
+      <div class="nav-center">
+        <button class="btn-home">
+          <svg width="15" height="15" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M10 2L2 9h2v9h5v-5h2v5h5V9h2L10 2z" />
+          </svg>
+          Bosh sahifa
+        </button>
+        <a href="./profile.html">
+          <button class="btn-profile">
+            <svg
+              width="15"
+              height="15"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+            >
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+            </svg>
+            Profilim
+          </button></a
+      >
+      </div>
+      </div>
+
+      <div class="nav-right">
+        <div class="user-code" id="userCodeBtn">
+          00-913
+          <svg
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </div>
+        <div class="notif-badge" id="notifBadge">0</div>
+      </div>
+    </nav>
+
+    <main>
+
+    
+      <h1 class="page-title">Testlar</h1>
+
+      <div id="testsGrid"></div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <h2>Peshqadamlar</h2>
+          <span class="top-badge">Top 10</span>
+        </div>
+        <div id="lb-list"></div>
+      </div>
+
+      <div>
+        <p class="section-users-header">Foydalanuvchilar</p>
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="stat-icon">
+              <svg
+                width="22"
+                height="22"
+                fill="none"
+                stroke="#888"
+                stroke-width="1.8"
+                viewBox="0 0 24 24"
+              >
+                <circle cx="9" cy="7" r="4" />
+                <path d="M2 20c0-4 3.1-7 7-7s7 3 7 7" />
+                <circle cx="19" cy="7" r="3" />
+                <path d="M16 20c0-3 2-5 4-5" />
+              </svg>
+            </div>
+            <div class="stat-value" id="totalUsers">0</div>
+            <div class="stat-label">Jami</div>
+          </div>
+          <div class="stat-box online">
+            <div class="stat-icon">
+              <svg
+                width="22"
+                height="22"
+                fill="none"
+                stroke="#2e7d32"
+                stroke-width="1.8"
+                viewBox="0 0 24 24"
+              >
+                <circle cx="9" cy="7" r="4" />
+                <path d="M2 20c0-4 3.1-7 7-7" />
+                <circle cx="17" cy="17" r="3" fill="#2e7d32" stroke="none" />
+              </svg>
+            </div>
+            <div class="stat-value green" id="onlineUsers">0</div>
+            <div class="stat-label">Onlayn</div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="../api.js"></script>
+    <script src="../bosh-sahifa.js"></script>
+  </body>
+</html>

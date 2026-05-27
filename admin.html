@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Admin — Online Test Platform</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="admin-style.css" />
+  </head>
+  <body>
+    <div class="login-overlay" id="loginOverlay">
+      <div class="login-card">
+        <h2>Admin kirish</h2>
+        <input id="loginInput" placeholder="Login" value="admin" />
+        <input
+          id="passInput"
+          placeholder="Parol"
+          type="password"
+          value="12345"
+        />
+        <div class="row">
+          <button onclick="doLogin()" class="btn">Kirish</button>
+        </div>
+        <div id="loginError" class="error"></div>
+      </div>
+    </div>
+
+    <div class="container" id="adminLayout" style="display: none">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand">Online Test</div>
+        <nav>
+          <button class="nav-btn active" data-page="dashboard">
+            Dashboard
+          </button>
+          <button class="nav-btn" data-page="users">O‘quvchilar</button>
+          <button class="nav-btn" data-page="tests">Testlar</button>
+          <button class="nav-btn" data-page="results">Natijalar</button>
+        </nav>
+        <div class="spacer"></div>
+        <button class="logout" onclick="doLogout()">Chiqish</button>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <button id="menuToggle" class="menu-toggle" aria-label="Menyu">
+            ☰
+          </button>
+          <h1 id="pageTitle">Dashboard</h1>
+          <a href="bosh-sahifa.html" class="btn ghost">Bosh sahifa</a>
+        </header>
+
+        <section id="dashboard" class="page active">
+          <div class="cards">
+            <div class="card">
+              <div class="card-title">Jami testlar</div>
+              <div id="countTests" class="card-value">0</div>
+            </div>
+            <div class="card">
+              <div class="card-title">Jami foydalanuvchilar</div>
+              <div id="countUsers" class="card-value">0</div>
+            </div>
+            <div class="card">
+              <div class="card-title">Jami natijalar</div>
+              <div id="countResults" class="card-value">0</div>
+            </div>
+            <!-- payments card removed -->
+          </div>
+
+          <!-- admin payment card UI removed -->
+        </section>
+
+        <section id="tests" class="page">
+          <div class="page-head">
+            <h2>Testlar</h2>
+            <div>
+              <button class="btn" id="openAdd">+ Test qo'shish</button>
+            </div>
+          </div>
+
+          <div id="testsList" class="tests-list"></div>
+
+          <div id="addPanel" class="panel" style="display: none">
+            <h3>Yangi test</h3>
+            <input id="tName" placeholder="Test nomi" />
+            <input id="tTime" placeholder="Vaqt (daq)" value="120" />
+            <input id="tType" placeholder="Turi (misol: Bepul)" />
+
+            <div
+              style="
+                margin-top: 10px;
+                margin-bottom: 6px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+              "
+            >
+              <strong>Savollar</strong>
+              <button id="addQuestion" class="btn ghost">
+                + Savol qo'shish
+              </button>
+            </div>
+
+            <div id="questionsContainer"></div>
+
+            <div class="row" style="margin-top: 12px">
+              <button class="btn" id="saveTest">Saqlash</button>
+              <button class="btn ghost" id="cancelAdd">Bekor</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="users" class="page">
+          <div class="page-head">
+            <h2>O‘quvchilar</h2>
+            <div>
+              <button class="btn" id="openUserAdd">
+                + Foydalanuvchi qo'shish
+              </button>
+            </div>
+          </div>
+
+          <div class="panel" style="margin-bottom: 12px">
+            <input id="searchUsers" placeholder="Foydalanuvchi qidirish..." />
+          </div>
+
+          <div id="usersList" class="users-list"></div>
+
+          <div id="userPanel" class="panel" style="display: none">
+            <h3 id="userPanelTitle">Yangi foydalanuvchi</h3>
+            <input id="uFullname" placeholder="Ism familiya" />
+            <input id="uLogin" placeholder="Login" />
+            <input id="uPassword" placeholder="Parol" type="password" />
+            <input id="uStatus" placeholder="Status (misol: faollik)" />
+            <div class="row" style="margin-top: 12px">
+              <button class="btn" id="saveUser">Saqlash</button>
+              <button class="btn ghost" id="cancelUser">Bekor</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="results" class="page">
+          <div class="page-head">
+            <h2>Natijalar</h2>
+          </div>
+          <div id="resultsList" class="results-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="admin-app.js"></script>
+  </body>
+</html>

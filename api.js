@@ -1,214 +1,64 @@
-/* Lightweight API wrapper with LocalStorage fallback */
-(function () {
-  "use strict";
+/* Supabase API (REAL DATABASE) */
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
-  async function fetchJson(url, opts) {
-    try {
-      const res = await fetch(
-        url,
-        Object.assign({ credentials: "same-origin" }, opts || {}),
-      );
-      if (!res.ok) throw new Error("network");
-      return await res.json();
-    } catch (e) {
-      throw e;
+const SUPABASE_URL = "https://dfkhuomahqiwvzieyorx.supabase.co";
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRma2h1b21haHFpd3Z6aWV5b3J4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzU5ODcsImV4cCI6MjA5NTQ1MTk4N30.dBdWHzQJ_9MyXpJLA5jvuRSB4uUpINPe2naTi8bu48M";
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+window.api = {
+  // TESTS
+  async getTests() {
+    const { data } = await supabase.from("tests").select("*");
+    return data || [];
+  },
+
+  // USERS
+  async getUsers() {
+    const { data } = await supabase.from("users").select("*");
+    return data || [];
+  },
+
+  async createUser(user) {
+    const { data, error } = await supabase.from("users").insert([user]);
+    if (error) throw error;
+    return data;
+  },
+
+  async updateUser(id, user) {
+    const { data, error } = await supabase
+      .from("users")
+      .update(user)
+      .eq("id", id);
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteUser(id) {
+    const { error } = await supabase.from("users").delete().eq("id", id);
+    if (error) throw error;
+  },
+
+  // RESULTS
+  async postResult(result) {
+    const { data, error } = await supabase
+      .from("results")
+      .insert([result]);
+    if (error) throw error;
+    return data;
+  },
+
+  async getResults() {
+    const { data } = await supabase.from("results").select("*");
+    return data || [];
+  },
+
+  // ADMIN LOGIN (simple check)
+  async adminLogin(password) {
+    if (password === "admin123") {
+      return { ok: true };
     }
-  }
-
-  // Fallback helpers using localStorage
-  function readLocal(key, def) {
-    try {
-      return JSON.parse(localStorage.getItem(key) || JSON.stringify(def || []));
-    } catch (e) {
-      return def || [];
-    }
-  }
-
-  function writeLocal(key, val) {
-    localStorage.setItem(key, JSON.stringify(val));
-  }
-
-  window.api = {
-    async getTests() {
-      try {
-        return await fetchJson("/api/tests");
-      } catch (e) {
-        return readLocal("public_tests", []);
-      }
-    },
-
-    async postResult(result) {
-      try {
-        return await fetchJson("/api/results", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(result),
-        });
-      } catch (e) {
-        const arr = readLocal("results", []);
-        arr.push(result);
-        writeLocal("results", arr);
-        return result;
-      }
-    },
-
-    async loginUser(code, pass) {
-      try {
-        return await fetchJson("/api/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, pass }),
-        });
-      } catch (e) {
-        return null;
-      }
-    },
-
-    async createUser(user, adminKey) {
-      try {
-        return await fetchJson("/api/users", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(adminKey ? { "x-admin-key": adminKey } : {}),
-          },
-          body: JSON.stringify(user),
-        });
-      } catch (e) {
-        const users = readLocal("users", []);
-        users.push(user);
-        writeLocal("users", users);
-        return user;
-      }
-    },
-
-    async updateUser(id, user, adminKey) {
-      try {
-        return await fetchJson(`/api/users/${id}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            ...(adminKey ? { "x-admin-key": adminKey } : {}),
-          },
-          body: JSON.stringify(user),
-        });
-      } catch (e) {
-        const users = readLocal("users", []);
-        const idx = users.findIndex((item) => String(item.id) === String(id));
-        if (idx !== -1) {
-          users[idx] = Object.assign({}, users[idx], user);
-          writeLocal("users", users);
-          return users[idx];
-        }
-        throw e;
-      }
-    },
-
-    async deleteUser(id, adminKey) {
-      try {
-        return await fetchJson(`/api/users/${id}`, {
-          method: "DELETE",
-          headers: adminKey ? { "x-admin-key": adminKey } : {},
-        });
-      } catch (e) {
-        const users = readLocal("users", []);
-        writeLocal(
-          "users",
-          users.filter((item) => String(item.id) !== String(id)),
-        );
-        return { ok: true };
-      }
-    },
-
-    async createTest(test, adminKey) {
-      try {
-        return await fetchJson("/api/tests", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(adminKey ? { "x-admin-key": adminKey } : {}),
-          },
-          body: JSON.stringify(test),
-        });
-      } catch (e) {
-        const list = readLocal("public_tests", []);
-        const item = Object.assign({ id: Date.now() }, test);
-        list.push(item);
-        writeLocal("public_tests", list);
-        return item;
-      }
-    },
-
-    async updateTest(id, test, adminKey) {
-      try {
-        return await fetchJson(`/api/tests/${id}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            ...(adminKey ? { "x-admin-key": adminKey } : {}),
-          },
-          body: JSON.stringify(test),
-        });
-      } catch (e) {
-        const list = readLocal("public_tests", []);
-        const idx = list.findIndex((item) => String(item.id) === String(id));
-        if (idx !== -1) {
-          list[idx] = Object.assign({}, list[idx], test);
-          writeLocal("public_tests", list);
-          return list[idx];
-        }
-        throw e;
-      }
-    },
-
-    async deleteTest(id, adminKey) {
-      try {
-        return await fetchJson(`/api/tests/${id}`, {
-          method: "DELETE",
-          headers: adminKey ? { "x-admin-key": adminKey } : {},
-        });
-      } catch (e) {
-        const list = readLocal("public_tests", []);
-        writeLocal(
-          "public_tests",
-          list.filter((item) => String(item.id) !== String(id)),
-        );
-        return { ok: true };
-      }
-    },
-
-    async adminLogin(password) {
-      try {
-        return await fetchJson("/api/admin/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ password }),
-        });
-      } catch (e) {
-        return null;
-      }
-    },
-
-    async getResults(adminKey) {
-      try {
-        return await fetchJson("/api/results", {
-          method: "GET",
-          headers: { "x-admin-key": adminKey },
-        });
-      } catch (e) {
-        return readLocal("results", []);
-      }
-    },
-
-    async getUsers(adminKey) {
-      try {
-        return await fetchJson("/api/users", {
-          method: "GET",
-          headers: { "x-admin-key": adminKey },
-        });
-      } catch (e) {
-        return readLocal("users", []);
-      }
-    },
-  };
-})();
+    return null;
+  },
+};

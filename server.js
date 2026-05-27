@@ -119,6 +119,40 @@ app.post("/api/users", requireAdmin, async (req, res) => {
   res.json(out);
 });
 
+app.put("/api/users/:id", requireAdmin, async (req, res) => {
+  const id = req.params.id;
+  const { code, pass, name, status } = req.body || {};
+  const data = await readData();
+  if (!data.users) data.users = [];
+  const idx = data.users.findIndex((u) => String(u.id) === String(id));
+  if (idx === -1) return res.status(404).json({ error: "not found" });
+  if (
+    code &&
+    data.users.some((u) => u.code === code && String(u.id) !== String(id))
+  )
+    return res.status(409).json({ error: "exists" });
+  const user = Object.assign({}, data.users[idx], {
+    code: code || data.users[idx].code,
+    pass: pass || data.users[idx].pass,
+    name: name || data.users[idx].name,
+    status: status || data.users[idx].status,
+  });
+  data.users[idx] = user;
+  await writeData(data);
+  const out = Object.assign({}, user);
+  delete out.pass;
+  res.json(out);
+});
+
+app.delete("/api/users/:id", requireAdmin, async (req, res) => {
+  const id = req.params.id;
+  const data = await readData();
+  if (!data.users) data.users = [];
+  data.users = data.users.filter((u) => String(u.id) !== String(id));
+  await writeData(data);
+  res.json({ ok: true });
+});
+
 // in-memory sessions and presence map
 const sessions = new Map(); // sessionId -> userId
 const presence = new Map(); // sessionId -> { lastSeen, userId }

@@ -41,6 +41,10 @@
     localStorage.setItem("results", JSON.stringify(results));
   }
 
+  function getAdminKey() {
+    return localStorage.getItem("admin_key");
+  }
+
   window.doLogin = function () {
     const l = document.getElementById("loginInput").value.trim();
     const p = document.getElementById("passInput").value.trim();
@@ -111,7 +115,13 @@
       }
       if (window.api.getUsers) {
         const users = await window.api.getUsers(adminKey);
-        localStorage.setItem("users", JSON.stringify(users || []));
+        const normalized = (users || []).map((user) => ({
+          ...user,
+          fullname: user.name || user.fullname || user.code || user.login,
+          login: user.code || user.login,
+          password: user.pass || user.password,
+        }));
+        localStorage.setItem("users", JSON.stringify(normalized));
       }
       if (window.api.getTests) {
         const tests = await window.api.getTests();
@@ -300,7 +310,7 @@
   let editingTestId = null;
   let editingUserId = null;
 
-  function saveTestHandler() {
+  async function saveTestHandler() {
     const name = el("tName").value.trim();
     const time = Number(el("tTime").value) || 120;
     const type = el("tType").value.trim();
@@ -313,17 +323,43 @@
       if (!confirm("Savolsiz test saqlansinmi?")) return;
     }
 
+    const adminKey = getAdminKey();
+    if (window.api && adminKey) {
+      try {
+        if (editingTestId === null) {
+          await window.api.createTest(
+            { name, time, type, questions },
+            adminKey,
+          );
+        } else {
+          await window.api.updateTest(
+            editingTestId,
+            { name, time, type, questions },
+            adminKey,
+          );
+        }
+        await syncFromServer();
+        el("addPanel").style.display = "none";
+        clearAddPanel();
+        renderTests();
+        renderDashboard();
+        alert("Saqlandi");
+        return;
+      } catch (err) {
+        // fallback to local storage when server call fails
+      }
+    }
+
     const tests = readPublicTests();
     if (editingTestId === null) {
-      const newTest = {
+      tests.push({
         id: Date.now(),
         name,
         time,
         type,
         questions,
         createdAt: new Date().toLocaleString(),
-      };
-      tests.push(newTest);
+      });
     } else {
       const idx = tests.findIndex((t) => t.id === editingTestId);
       if (idx === -1) return alert("Tahrir xatosi");
@@ -342,7 +378,7 @@
     alert("Saqlandi");
   }
 
-  function saveUserHandler() {
+  async function saveUserHandler() {
     const fullname = el("uFullname").value.trim();
     const login = el("uLogin").value.trim();
     const password = el("uPassword").value.trim();
@@ -350,6 +386,33 @@
     if (!fullname || !login || !password) {
       alert("Barcha maydonlarni to'ldiring");
       return;
+    }
+
+    const adminKey = getAdminKey();
+    if (window.api && adminKey) {
+      try {
+        if (editingUserId === null) {
+          await window.api.createUser(
+            { code: login, pass: password, name: fullname, status },
+            adminKey,
+          );
+        } else {
+          await window.api.updateUser(
+            editingUserId,
+            { code: login, pass: password, name: fullname, status },
+            adminKey,
+          );
+        }
+        await syncFromServer();
+        renderUsers(el("searchUsers").value.trim());
+        renderDashboard();
+        clearUserPanel();
+        el("userPanel").style.display = "none";
+        alert("Foydalanuvchi saqlandi");
+        return;
+      } catch (err) {
+        // fallback to local storage when server call fails
+      }
     }
 
     const users = readUsers();
@@ -388,8 +451,20 @@
     alert("Foydalanuvchi saqlandi");
   }
 
-  window.deleteUser = function (id) {
+  window.deleteUser = async function (id) {
     if (!confirm("Foydalanuvchini o'chirishni tasdiqlaysizmi?")) return;
+    const adminKey = getAdminKey();
+    if (window.api && adminKey) {
+      try {
+        await window.api.deleteUser(id, adminKey);
+        await syncFromServer();
+        renderUsers(el("searchUsers").value.trim());
+        renderDashboard();
+        return;
+      } catch (err) {
+        // fallback to local
+      }
+    }
     const users = readUsers().filter((user) => user.id !== id);
     writeUsers(users);
     renderUsers(el("searchUsers").value.trim());
@@ -409,8 +484,20 @@
     el("userPanel").style.display = "block";
   };
 
-  window.deleteTest = function (id) {
+  window.deleteTest = async function (id) {
     if (!confirm("Testni o'chirishni tasdiqlaysizmi?")) return;
+    const adminKey = getAdminKey();
+    if (window.api && adminKey) {
+      try {
+        await window.api.deleteTest(id, adminKey);
+        await syncFromServer();
+        renderTests();
+        renderDashboard();
+        return;
+      } catch (err) {
+        // fallback to local
+      }
+    }
     const tests = readPublicTests().filter((t) => t.id !== id);
     writePublicTests(tests);
     renderTests();

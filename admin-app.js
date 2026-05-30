@@ -1,9 +1,6 @@
-﻿/* Admin app - manages users, public_tests and results in localStorage */
+﻿/* Admin app - panel for managing tests, users, and viewing results */
 (function () {
   "use strict";
-
-  const ADMIN_LOGIN = "admin";
-  const ADMIN_PASS = "12345";
 
   function readUsers() {
     try {
@@ -41,64 +38,13 @@
     localStorage.setItem("results", JSON.stringify(results));
   }
 
-  window.doLogin = function () {
-    const l = document.getElementById("loginInput").value.trim();
-    const p = document.getElementById("passInput").value.trim();
-    // Try server admin login first
-    if (window.api && window.api.adminLogin) {
-      window.api
-        .adminLogin(p)
-        .then((res) => {
-          if (res && res.ok && res.admin_key) {
-            localStorage.setItem("admin_logged_in", "true");
-            localStorage.setItem("admin_key", res.admin_key);
-            document.getElementById("loginOverlay").style.display = "none";
-            document.getElementById("adminLayout").style.display = "flex";
-            // Sync server data into localStorage for the admin UI
-            syncFromServer().then(() => init());
-            return;
-          }
-          // fallback to local check
-          if (l === ADMIN_LOGIN && p === ADMIN_PASS) {
-            localStorage.setItem("admin_logged_in", "true");
-            document.getElementById("loginOverlay").style.display = "none";
-            document.getElementById("adminLayout").style.display = "flex";
-            init();
-            return;
-          }
-          document.getElementById("loginError").textContent =
-            "Login yoki parol noto‘g‘ri";
-        })
-        .catch(() => {
-          // network error -> fallback to local
-          if (l === ADMIN_LOGIN && p === ADMIN_PASS) {
-            localStorage.setItem("admin_logged_in", "true");
-            document.getElementById("loginOverlay").style.display = "none";
-            document.getElementById("adminLayout").style.display = "flex";
-            init();
-            return;
-          }
-          document.getElementById("loginError").textContent =
-            "Login yoki parol noto‘g‘ri";
-        });
-      return;
-    }
-    // No API wrapper -> local check
-    if (l === ADMIN_LOGIN && p === ADMIN_PASS) {
-      localStorage.setItem("admin_logged_in", "true");
-      document.getElementById("loginOverlay").style.display = "none";
-      document.getElementById("adminLayout").style.display = "flex";
-      init();
-    } else {
-      document.getElementById("loginError").textContent =
-        "Login yoki parol noto‘g‘ri";
-    }
-  };
-
   window.doLogout = function () {
     localStorage.removeItem("admin_logged_in");
     localStorage.removeItem("admin_key");
-    location.reload();
+    const indexPath = window.location.pathname.includes("/html/")
+      ? "../index.html"
+      : "index.html";
+    window.location.href = indexPath;
   };
 
   async function syncFromServer() {
@@ -200,7 +146,7 @@
     const list = el("testsList");
     const tests = readPublicTests();
     if (!tests.length) {
-      list.innerHTML = '<div class="panel">Hozircha testlar yo‘q</div>';
+      list.innerHTML = '<div class="panel">Hozircha testlar yo�q</div>';
       return;
     }
     list.innerHTML = tests
@@ -211,7 +157,7 @@
           <div style="display:flex;justify-content:space-between"><strong>${escapeHtml(
             t.name,
           )}</strong><span>${t.time || 0} min</span></div>
-          <div style="margin-top:8px;color:var(--muted, #9aa)">Savollar: ${qCount} — Turi: ${escapeHtml(
+          <div style="margin-top:8px;color:var(--muted, #9aa)">Savollar: ${qCount} � Turi: ${escapeHtml(
             t.type || "",
           )}</div>
           <div style="margin-top:10px;display:flex;gap:8px"><button class="btn" onclick="editTest(${t.id})">Tahrirlash</button><button class="btn ghost" onclick="deleteTest(${t.id})">O'chirish</button></div>
@@ -239,7 +185,7 @@
         <div class="user-item">
           <div>
             <div class="user-name">${escapeHtml(user.fullname)}</div>
-            <div class="user-meta">${escapeHtml(user.login)} • ${escapeHtml(user.status)}</div>
+            <div class="user-meta">${escapeHtml(user.login)} � ${escapeHtml(user.status)}</div>
           </div>
           <div class="user-stats">
             <span>Testlar: ${stats.totalTests}</span>
@@ -528,9 +474,9 @@
       .map((r) => {
         return `<div class="result-item"><strong>${escapeHtml(
           r.fullname || r.student || "Anon",
-        )}</strong> — ${escapeHtml(r.test || "")} — <span style="font-weight:700">${escapeHtml(
+        )}</strong> � ${escapeHtml(r.test || "")} � <span style="font-weight:700">${escapeHtml(
           String(r.percent || r.score || 0),
-        )}%</span> — ${escapeHtml(String(r.time || ""))} — <span style="color:var(--muted)">${escapeHtml(
+        )}%</span> � ${escapeHtml(String(r.time || ""))} � <span style="color:var(--muted)">${escapeHtml(
           r.date || "",
         )}</span></div>`;
       })
@@ -588,6 +534,7 @@
   function init() {
     renderDashboard();
     renderTests();
+    renderUsers();
     renderResults();
     bind();
     const menu = document.getElementById("menuToggle");
@@ -607,15 +554,18 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    if (localStorage.getItem("admin_logged_in") === "true") {
-      document.getElementById("loginOverlay").style.display = "none";
-      document.getElementById("adminLayout").style.display = "flex";
-      // payment admin card UI removed
-      // try one-time sync from server when page loads
-      (async () => {
-        await syncFromServer();
-        init();
-      })();
+    const isLoggedIn = localStorage.getItem("admin_logged_in") === "true";
+    if (!isLoggedIn) {
+      const indexPath = window.location.pathname.includes("/html/")
+        ? "../index.html"
+        : "index.html";
+      window.location.href = indexPath;
+      return;
     }
+    // Admin is logged in, initialize the panel
+    (async () => {
+      await syncFromServer();
+      init();
+    })();
   });
 })();

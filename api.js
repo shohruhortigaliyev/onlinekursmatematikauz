@@ -1,64 +1,148 @@
-/* Supabase API (REAL DATABASE) */
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+const API_BASE = "";
 
-const SUPABASE_URL = "https://dfkhuomahqiwvzieyorx.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRma2h1b21haHFpd3Z6aWV5b3J4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NzU5ODcsImV4cCI6MjA5NTQ1MTk4N30.dBdWHzQJ_9MyXpJLA5jvuRSB4uUpINPe2naTi8bu48M";
+function getAdminHeaders(adminKey) {
+  const key = adminKey || localStorage.getItem("admin_key");
+  return key ? { "x-admin-key": key } : {};
+}
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+async function request(path, options = {}) {
+  const opts = {
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+    ...options,
+  };
+  const res = await fetch(API_BASE + path, opts);
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const error = data && data.error ? data.error : res.statusText;
+    throw new Error(error || "Request failed");
+  }
+  return data;
+}
 
 window.api = {
-  // TESTS
-  async getTests() {
-    const { data } = await supabase.from("tests").select("*");
-    return data || [];
-  },
-
-  // USERS
-  async getUsers() {
-    const { data } = await supabase.from("users").select("*");
-    return data || [];
-  },
-
-  async createUser(user) {
-    const { data, error } = await supabase.from("users").insert([user]);
-    if (error) throw error;
-    return data;
-  },
-
-  async updateUser(id, user) {
-    const { data, error } = await supabase
-      .from("users")
-      .update(user)
-      .eq("id", id);
-    if (error) throw error;
-    return data;
-  },
-
-  async deleteUser(id) {
-    const { error } = await supabase.from("users").delete().eq("id", id);
-    if (error) throw error;
-  },
-
-  // RESULTS
-  async postResult(result) {
-    const { data, error } = await supabase
-      .from("results")
-      .insert([result]);
-    if (error) throw error;
-    return data;
-  },
-
-  async getResults() {
-    const { data } = await supabase.from("results").select("*");
-    return data || [];
-  },
-
-  // ADMIN LOGIN (simple check)
-  async adminLogin(password) {
-    if (password === "admin123") {
-      return { ok: true };
+  async loginUser(login, pass) {
+    try {
+      return await request("/api/login", {
+        method: "POST",
+        body: JSON.stringify({ code: login, login, pass }),
+      });
+    } catch (error) {
+      return { ok: false, error: error.message || "invalid" };
     }
-    return null;
+  },
+
+  async adminLogin(password) {
+    try {
+      return await request("/api/admin/login", {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      });
+    } catch (error) {
+      return { ok: false, error: error.message || "invalid" };
+    }
+  },
+
+  async getTests() {
+    try {
+      return await request("/api/tests");
+    } catch (error) {
+      return [];
+    }
+  },
+
+  async createTest(test, adminKey) {
+    return await request("/api/tests", {
+      method: "POST",
+      headers: getAdminHeaders(adminKey),
+      body: JSON.stringify(test),
+    });
+  },
+
+  async updateTest(test, adminKey) {
+    return await request(`/api/tests/${encodeURIComponent(test.id)}`, {
+      method: "PUT",
+      headers: getAdminHeaders(adminKey),
+      body: JSON.stringify(test),
+    });
+  },
+
+  async deleteTest(id, adminKey) {
+    return await request(`/api/tests/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: getAdminHeaders(adminKey),
+    });
+  },
+
+  async getUsers(adminKey) {
+    try {
+      return await request("/api/users", {
+        headers: getAdminHeaders(adminKey),
+      });
+    } catch (error) {
+      return [];
+    }
+  },
+
+  async createUser(user, adminKey) {
+    return await request("/api/users", {
+      method: "POST",
+      headers: getAdminHeaders(adminKey),
+      body: JSON.stringify({
+        code: user.login || user.code,
+        login: user.login || user.code,
+        pass: user.password || user.pass,
+        password: user.password || user.pass,
+        name: user.fullname,
+        status: user.status,
+      }),
+    });
+  },
+
+  async updateUser(user, adminKey) {
+    return await request(`/api/users/${encodeURIComponent(user.id)}`, {
+      method: "PUT",
+      headers: getAdminHeaders(adminKey),
+      body: JSON.stringify({
+        code: user.login || user.code,
+        login: user.login || user.code,
+        pass: user.password || user.pass,
+        password: user.password || user.pass,
+        name: user.fullname,
+        status: user.status,
+      }),
+    });
+  },
+
+  async deleteUser(id, adminKey) {
+    return await request(`/api/users/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: getAdminHeaders(adminKey),
+    });
+  },
+
+  async postResult(result) {
+    try {
+      return await request("/api/results", {
+        method: "POST",
+        body: JSON.stringify(result),
+      });
+    } catch (error) {
+      return null;
+    }
+  },
+
+  async getResults(adminKey) {
+    try {
+      return await request("/api/results", {
+        headers: getAdminHeaders(adminKey),
+      });
+    } catch (error) {
+      return [];
+    }
   },
 };

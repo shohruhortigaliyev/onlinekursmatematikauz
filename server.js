@@ -34,6 +34,21 @@ function makeId() {
   return String(Date.now()) + Math.floor(Math.random() * 1000);
 }
 
+function normalizeUserFields(body) {
+  const code = body.code || body.login || body.user_code || body.userLogin;
+  const pass = body.pass || body.password;
+  const name = body.name || body.fullname || body.userName || body.userName;
+  const status = body.status || "active";
+  return { code, pass, name, status };
+}
+
+function normalizeUserResponse(user) {
+  const out = Object.assign({}, user);
+  if (!out.login && out.code) out.login = out.code;
+  if (!out.code && out.login) out.code = out.login;
+  return out;
+}
+
 // Admin auth middleware (simple header)
 function requireAdmin(req, res, next) {
   const key = req.headers["x-admin-key"] || req.query.admin_key;
@@ -78,7 +93,7 @@ app.delete("/api/tests/:id", requireAdmin, async (req, res) => {
 
 // ===== USERS / ACCOUNTS =====
 app.post("/api/register", async (req, res) => {
-  const { code, pass, name } = req.body || {};
+  const { code, pass, name } = normalizeUserFields(req.body || {});
   if (!code || !pass) return res.status(400).json({ error: "invalid" });
   const data = await readData();
   if (!data.users) data.users = [];
@@ -87,7 +102,7 @@ app.post("/api/register", async (req, res) => {
   const user = { id: makeId(), code, pass, name: name || "Foydalanuvchi" };
   data.users.push(user);
   await writeData(data);
-  const out = Object.assign({}, user);
+  const out = normalizeUserResponse(Object.assign({}, user));
   delete out.pass;
   res.json(out);
 });
@@ -95,11 +110,12 @@ app.post("/api/register", async (req, res) => {
 // Admin-only user management
 app.get("/api/users", requireAdmin, async (req, res) => {
   const data = await readData();
-  res.json(data.users || []);
+  const users = (data.users || []).map((user) => normalizeUserResponse(user));
+  res.json(users);
 });
 
 app.post("/api/users", requireAdmin, async (req, res) => {
-  const { code, pass, name, status } = req.body || {};
+  const { code, pass, name, status } = normalizeUserFields(req.body || {});
   if (!code || !pass) return res.status(400).json({ error: "invalid" });
   const data = await readData();
   if (!data.users) data.users = [];
@@ -114,14 +130,14 @@ app.post("/api/users", requireAdmin, async (req, res) => {
   };
   data.users.push(user);
   await writeData(data);
-  const out = Object.assign({}, user);
+  const out = normalizeUserResponse(Object.assign({}, user));
   delete out.pass;
   res.json(out);
 });
 
 app.put("/api/users/:id", requireAdmin, async (req, res) => {
   const id = req.params.id;
-  const { code, pass, name, status } = req.body || {};
+  const { code, pass, name, status } = normalizeUserFields(req.body || {});
   const data = await readData();
   if (!data.users) data.users = [];
   const idx = data.users.findIndex((u) => String(u.id) === String(id));
@@ -139,7 +155,7 @@ app.put("/api/users/:id", requireAdmin, async (req, res) => {
   });
   data.users[idx] = user;
   await writeData(data);
-  const out = Object.assign({}, user);
+  const out = normalizeUserResponse(Object.assign({}, user));
   delete out.pass;
   res.json(out);
 });
@@ -159,17 +175,23 @@ const presence = new Map(); // sessionId -> { lastSeen, userId }
 const PRESENCE_TTL = 30 * 1000; // 30 seconds
 
 app.post("/api/login", async (req, res) => {
-  const { code, pass } = req.body || {};
-  if (!code || !pass) return res.status(400).json({ error: "invalid" });
+  const { code, login, pass, password } = req.body || {};
+  const userCode = code || login;
+  const userPass = pass || password;
+  if (!userCode || !userPass) return res.status(400).json({ error: "invalid" });
   const data = await readData();
   const user = (data.users || []).find(
-    (u) => u.code === code && u.pass === pass,
+    (u) => u.code === userCode && u.pass === userPass,
   );
   if (!user) return res.status(401).json({ error: "invalid" });
   const sid = makeId();
   sessions.set(sid, user.id);
   presence.set(sid, { lastSeen: Date.now(), userId: user.id });
-  const out = { id: user.id, code: user.code, name: user.name };
+  const out = normalizeUserResponse({
+    id: user.id,
+    code: user.code,
+    name: user.name,
+  });
   res.json({ ok: true, user: out, sessionId: sid });
 });
 
@@ -181,7 +203,7 @@ app.get("/api/me", async (req, res) => {
   const data = await readData();
   const user = (data.users || []).find((u) => u.id === userId);
   if (!user) return res.status(404).json({ error: "not found" });
-  const out = Object.assign({}, user);
+  const out = normalizeUserResponse(Object.assign({}, user));
   delete out.pass;
   res.json({ ok: true, user: out });
 });

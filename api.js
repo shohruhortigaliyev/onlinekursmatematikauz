@@ -170,9 +170,13 @@ window.api = {
       .limit(1)
       .single();
     if (error && error.code !== "PGRST116") {
+      console.error("Login xatolik:", error);
       return { ok: false, error };
     }
-    if (!data) return { ok: false };
+    if (!data) {
+      console.warn("Foydalanuvchi topilmadi:", login);
+      return { ok: false };
+    }
     const user = normalizeUser(data);
     this.setSessionUser(user);
     return { ok: true, user };
@@ -233,6 +237,7 @@ window.api = {
       .limit(1)
       .single();
     if (error && error.code !== "PGRST116") {
+      console.error("getUserByCode xatolik:", error);
       throw error;
     }
     return normalizeUser(data);
@@ -240,24 +245,37 @@ window.api = {
 
   async createUser(user) {
     const payload = userToDb(user);
+    console.log("userToDb payload (create):", payload);
     const { data, error } = await supabase
       .from("users")
       .insert([payload])
       .select("*")
       .single();
-    if (error) throw error;
+    if (error) {
+      console.error("createUser xatolik:", error);
+      throw new Error(
+        `Foydalanuvchi yaratishda xatolik: ${error.message || error.code}`,
+      );
+    }
     return normalizeUser(data);
   },
 
   async updateUser(user) {
     const payload = userToDb(user);
+    console.log("userToDb payload (update):", payload);
+    console.log("ID orqali update:", user.id);
     const { data, error } = await supabase
       .from("users")
       .update(payload)
       .eq("id", user.id)
       .select("*")
       .single();
-    if (error) throw error;
+    if (error) {
+      console.error("updateUser xatolik:", error);
+      throw new Error(
+        `Foydalanuvchi yangilashda xatolik: ${error.message || error.code}`,
+      );
+    }
     return normalizeUser(data);
   },
 

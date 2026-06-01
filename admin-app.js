@@ -86,7 +86,8 @@
   function renderUsers(query = "") {
     const list = el("usersList");
     const filtered = users.filter((user) => {
-      const value = `${user.fullname} ${user.login} ${user.status}`.toLowerCase();
+      const value =
+        `${user.fullname} ${user.login} ${user.status}`.toLowerCase();
       return value.includes(query.toLowerCase());
     });
     if (!filtered.length) {
@@ -189,7 +190,9 @@
       </div>
     `;
     wrapper.querySelector(".q-correct").value = String(question.correct ?? 0);
-    wrapper.querySelector(".remove-q").addEventListener("click", () => wrapper.remove());
+    wrapper
+      .querySelector(".remove-q")
+      .addEventListener("click", () => wrapper.remove());
     return wrapper;
   }
 
@@ -266,12 +269,29 @@
           alert("Bu login allaqachon mavjud");
           return;
         }
+        console.log("Yangi foydalanuvchi yaratilmoqda:", {
+          fullname,
+          login,
+          password,
+          status,
+        });
         await window.api.createUser({ fullname, login, password, status });
       } else {
-        if (users.some((item) => item.login === login && item.id !== editingUserId)) {
+        if (
+          users.some(
+            (item) => item.login === login && item.id !== editingUserId,
+          )
+        ) {
           alert("Bu login allaqachon boshqa foydalanuvchiga tegishli");
           return;
         }
+        console.log("Foydalanuvchi yangilangichi:", {
+          id: editingUserId,
+          fullname,
+          login,
+          password,
+          status,
+        });
         await window.api.updateUser({
           id: editingUserId,
           fullname,
@@ -287,8 +307,8 @@
       el("userPanel").style.display = "none";
       alert("Foydalanuvchi saqlandi");
     } catch (error) {
-      console.error(error);
-      alert("Foydalanuvchi saqlashda xatolik yuz berdi. Iltimos qayta urinib ko'ring.");
+      console.error("Foydalanuvchi saqlashda xatolik:", error);
+      alert("Xatolik: " + (error.message || "Noma'lum xatolik yuz berdi"));
     }
   }
 
@@ -351,12 +371,17 @@
   function bind() {
     document.querySelectorAll(".nav-btn").forEach((button) =>
       button.addEventListener("click", () => {
-        document.querySelectorAll(".nav-btn").forEach((item) => item.classList.remove("active"));
+        document
+          .querySelectorAll(".nav-btn")
+          .forEach((item) => item.classList.remove("active"));
         button.classList.add("active");
-        document.querySelectorAll(".page").forEach((page) => page.classList.remove("active"));
+        document
+          .querySelectorAll(".page")
+          .forEach((page) => page.classList.remove("active"));
         const pageKey = button.dataset.page;
         document.getElementById(pageKey).classList.add("active");
-        el("pageTitle").textContent = pageKey.charAt(0).toUpperCase() + pageKey.slice(1);
+        el("pageTitle").textContent =
+          pageKey.charAt(0).toUpperCase() + pageKey.slice(1);
         if (pageKey === "tests") renderTests();
         if (pageKey === "dashboard") renderDashboard();
         if (pageKey === "results") renderResults();
@@ -462,7 +487,8 @@
   };
 
   document.addEventListener("DOMContentLoaded", () => {
-    const session = window.api && window.api.getAdminSession && window.api.getAdminSession();
+    const session =
+      window.api && window.api.getAdminSession && window.api.getAdminSession();
     if (session) {
       el("loginOverlay").style.display = "none";
       el("adminLayout").style.display = "flex";

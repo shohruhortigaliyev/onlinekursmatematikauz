@@ -1,166 +1,83 @@
-﻿/* Admin app - panel for managing tests, users, and viewing results */
+﻿/* Admin app - Supabase-based user, test, and result management */
 (function () {
   "use strict";
 
-  function readUsers() {
-    try {
-      return JSON.parse(localStorage.getItem("users") || "[]");
-    } catch (e) {
-      return [];
-    }
-  }
-
-  function writeUsers(users) {
-    localStorage.setItem("users", JSON.stringify(users));
-  }
-
-  function readPublicTests() {
-    try {
-      return JSON.parse(localStorage.getItem("public_tests") || "[]");
-    } catch (e) {
-      return [];
-    }
-  }
-
-  function writePublicTests(tests) {
-    localStorage.setItem("public_tests", JSON.stringify(tests));
-  }
-
-  function readResults() {
-    try {
-      return JSON.parse(localStorage.getItem("results") || "[]");
-    } catch (e) {
-      return [];
-    }
-  }
-
-  function writeResults(results) {
-    localStorage.setItem("results", JSON.stringify(results));
-  }
-
-  window.doLogout = function () {
-    localStorage.removeItem("admin_logged_in");
-    localStorage.removeItem("admin_key");
-    const indexPath = window.location.pathname.includes("/html/")
-      ? "../index.html"
-      : "index.html";
-    window.location.href = indexPath;
-  };
-
-  async function syncFromServer() {
-    const adminKey = localStorage.getItem("admin_key");
-    if (!adminKey || !window.api) return;
-    try {
-      if (window.api.getResults) {
-        const results = await window.api.getResults(adminKey);
-        localStorage.setItem("results", JSON.stringify(results || []));
-      }
-      if (window.api.getUsers) {
-        const users = await window.api.getUsers(adminKey);
-        localStorage.setItem("users", JSON.stringify(users || []));
-      }
-      if (window.api.getTests) {
-        const tests = await window.api.getTests();
-        // server's tests are authoritative
-        localStorage.setItem("public_tests", JSON.stringify(tests || []));
-      }
-    } catch (e) {
-      // ignore errors; UI will fallback to localStorage
-    }
-  }
-
-  async function saveTestRemote(test, isNew) {
-    if (!window.api || !window.api.createTest) return null;
-    try {
-      if (isNew) return await window.api.createTest(test);
-      if (window.api.updateTest) return await window.api.updateTest(test);
-    } catch (e) {
-      console.warn("Remote test save failed", e);
-    }
-    return null;
-  }
-
-  async function saveUserRemote(user, isNew) {
-    if (!window.api || !window.api.createUser) return null;
-    try {
-      if (isNew) return await window.api.createUser(user);
-      if (window.api.updateUser) return await window.api.updateUser(user);
-    } catch (e) {
-      console.warn("Remote user save failed", e);
-    }
-    return null;
-  }
-
-  async function deleteTestRemote(id) {
-    if (!window.api || !window.api.deleteTest) return false;
-    try {
-      await window.api.deleteTest(id);
-      return true;
-    } catch (e) {
-      console.warn("Remote test delete failed", e);
-      return false;
-    }
-  }
-
-  async function deleteUserRemote(id) {
-    if (!window.api || !window.api.deleteUser) return false;
-    try {
-      await window.api.deleteUser(id);
-      return true;
-    } catch (e) {
-      console.warn("Remote user delete failed", e);
-      return false;
-    }
-  }
-
-  // saveAdminCard removed with payment feature
+  let users = [];
+  let tests = [];
+  let results = [];
+  let editingTestId = null;
+  let editingUserId = null;
+  let resultsSubscription = null;
 
   function el(id) {
     return document.getElementById(id);
   }
 
+  function escapeHtml(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  async function refreshData() {
+    if (!window.api) return;
+    try {
+      const [loadedUsers, loadedTests, loadedResults] = await Promise.all([
+        window.api.getUsers(),
+        window.api.getTests(),
+        window.api.getResults(),
+      ]);
+      users = loadedUsers || [];
+      tests = loadedTests || [];
+      results = loadedResults || [];
+    } catch (error) {
+      console.error("Ma'lumotlarni yuklash xatosi:", error);
+      users = users || [];
+      tests = tests || [];
+      results = results || [];
+    }
+  }
+
   function getUserStats(user) {
-    const results = readResults().filter(
+    const userResults = results.filter(
       (r) => String(r.userId) === String(user.id) || r.login === user.login,
     );
-    const total = results.length;
-    const scoreSum = results.reduce(
-      (sum, item) => sum + Number(item.percent || item.score || 0),
+    const total = userResults.length;
+    const sum = userResults.reduce(
+      (acc, item) => acc + Number(item.percent || item.score || 0),
       0,
     );
     return {
       totalTests: total,
-      avgScore: total ? Math.round(scoreSum / total) : 0,
+      avgScore: total ? Math.round(sum / total) : 0,
     };
   }
 
-  // payments feature removed
-
   function renderDashboard() {
-    el("countTests").textContent = readPublicTests().length;
-    el("countUsers").textContent = readUsers().length;
-    el("countResults").textContent = readResults().length;
+    el("countTests").textContent = String(tests.length);
+    el("countUsers").textContent = String(users.length);
+    el("countResults").textContent = String(results.length);
   }
 
   function renderTests() {
     const list = el("testsList");
-    const tests = readPublicTests();
     if (!tests.length) {
-      list.innerHTML = '<div class="panel">Hozircha testlar yo�q</div>';
+      list.innerHTML = '<div class="panel">Hozircha testlar yo‘q</div>';
       return;
     }
     list.innerHTML = tests
-      .map((t) => {
-        const qCount = (t.questions || []).length;
+      .map((test) => {
+        const qCount = (test.questions || []).length;
         return `
         <div class="test-card">
           <div style="display:flex;justify-content:space-between"><strong>${escapeHtml(
-            t.name,
-          )}</strong><span>${t.time || 0} min</span></div>
-          <div style="margin-top:8px;color:var(--muted, #9aa)">Savollar: ${qCount} � Turi: ${escapeHtml(
-            t.type || "",
+            test.name,
+          )}</strong><span>${test.time || 0} min</span></div>
+          <div style="margin-top:8px;color:var(--muted, #9aa)">Savollar: ${qCount} — Turi: ${escapeHtml(
+            test.type || "",
           )}</div>
-          <div style="margin-top:10px;display:flex;gap:8px"><button class="btn" onclick="editTest(${t.id})">Tahrirlash</button><button class="btn ghost" onclick="deleteTest(${t.id})">O'chirish</button></div>
+          <div style="margin-top:10px;display:flex;gap:8px"><button class="btn" onclick="editTest(${test.id})">Tahrirlash</button><button class="btn ghost" onclick="deleteTest(${test.id})">O'chirish</button></div>
         </div>`;
       })
       .join("");
@@ -168,10 +85,8 @@
 
   function renderUsers(query = "") {
     const list = el("usersList");
-    const users = readUsers();
     const filtered = users.filter((user) => {
-      const value =
-        `${user.fullname} ${user.login} ${user.status}`.toLowerCase();
+      const value = `${user.fullname} ${user.login} ${user.status}`.toLowerCase();
       return value.includes(query.toLowerCase());
     });
     if (!filtered.length) {
@@ -185,7 +100,7 @@
         <div class="user-item">
           <div>
             <div class="user-name">${escapeHtml(user.fullname)}</div>
-            <div class="user-meta">${escapeHtml(user.login)} � ${escapeHtml(user.status)}</div>
+            <div class="user-meta">${escapeHtml(user.login)} • ${escapeHtml(user.status)}</div>
           </div>
           <div class="user-stats">
             <span>Testlar: ${stats.totalTests}</span>
@@ -200,51 +115,65 @@
       .join("");
   }
 
-  function escapeHtml(s) {
-    return String(s || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+  function renderResults() {
+    const list = el("resultsList");
+    if (!results.length) {
+      list.innerHTML = '<div class="panel">Natija topilmadi</div>';
+      return;
+    }
+    list.innerHTML = results
+      .slice()
+      .reverse()
+      .map((result) => {
+        return `<div class="result-item"><strong>${escapeHtml(
+          result.fullname || result.student || "Anon",
+        )}</strong> — ${escapeHtml(result.test || "")} — <span style="font-weight:700">${escapeHtml(
+          String(result.percent || result.score || 0),
+        )}%</span> — ${escapeHtml(String(result.time || ""))} — <span style="color:var(--muted)">${escapeHtml(
+          result.date || "",
+        )}</span></div>`;
+      })
+      .join("");
   }
 
   function collectQuestionsFromDOM() {
     const container = el("questionsContainer");
     const rows = Array.from(container.children);
     return rows
-      .map((r, i) => {
-        const text = r.querySelector(".q-text").value.trim();
-        const opts = [
-          r.querySelector(".opt0").value.trim(),
-          r.querySelector(".opt1").value.trim(),
-          r.querySelector(".opt2").value.trim(),
-          r.querySelector(".opt3").value.trim(),
+      .map((row, index) => {
+        const text = row.querySelector(".q-text").value.trim();
+        const options = [
+          row.querySelector(".opt0").value.trim(),
+          row.querySelector(".opt1").value.trim(),
+          row.querySelector(".opt2").value.trim(),
+          row.querySelector(".opt3").value.trim(),
         ];
-        const correct = Number(r.querySelector(".q-correct").value);
-        return { id: i + 1, text, options: opts, correct };
+        const correct = Number(row.querySelector(".q-correct").value);
+        return { id: index + 1, text, options, correct };
       })
-      .filter((q) => q.text);
+      .filter((question) => question.text);
   }
 
-  function makeQuestionRow(q) {
-    const wrap = document.createElement("div");
-    wrap.className = "question-row";
-    wrap.innerHTML = `
+  function makeQuestionRow(question = {}) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "question-row";
+    wrapper.innerHTML = `
       <div class="question-main">
         <input class="q-input q-text" placeholder="Savol matni" value="${escapeHtml(
-          q?.text || "",
+          question.text || "",
         )}">
         <div class="opts">
           <div class="opt-row"><input class="opt-input opt0" placeholder="Variant A" value="${escapeHtml(
-            q?.options?.[0] || "",
+            question.options?.[0] || "",
           )}"></div>
           <div class="opt-row"><input class="opt-input opt1" placeholder="Variant B" value="${escapeHtml(
-            q?.options?.[1] || "",
+            question.options?.[1] || "",
           )}"></div>
           <div class="opt-row"><input class="opt-input opt2" placeholder="Variant C" value="${escapeHtml(
-            q?.options?.[2] || "",
+            question.options?.[2] || "",
           )}"></div>
           <div class="opt-row"><input class="opt-input opt3" placeholder="Variant D" value="${escapeHtml(
-            q?.options?.[3] || "",
+            question.options?.[3] || "",
           )}"></div>
         </div>
       </div>
@@ -259,15 +188,13 @@
         <button class="remove-q">O'chirish</button>
       </div>
     `;
-    wrap.querySelector(".q-correct").value = String(q?.correct ?? 0);
-    wrap
-      .querySelector(".remove-q")
-      .addEventListener("click", () => wrap.remove());
-    return wrap;
+    wrapper.querySelector(".q-correct").value = String(question.correct ?? 0);
+    wrapper.querySelector(".remove-q").addEventListener("click", () => wrapper.remove());
+    return wrapper;
   }
 
-  function addQuestionRow(q) {
-    el("questionsContainer").appendChild(makeQuestionRow(q));
+  function addQuestionRow(question = {}) {
+    el("questionsContainer").appendChild(makeQuestionRow(question));
   }
 
   function clearAddPanel() {
@@ -287,9 +214,6 @@
     editingUserId = null;
   }
 
-  let editingTestId = null;
-  let editingUserId = null;
-
   async function saveTestHandler() {
     const name = el("tName").value.trim();
     const time = Number(el("tTime").value) || 120;
@@ -299,53 +223,32 @@
       return;
     }
     const questions = collectQuestionsFromDOM();
-    if (!questions.length) {
-      if (!confirm("Savolsiz test saqlansinmi?")) return;
+    if (!questions.length && !confirm("Savolsiz test saqlansinmi?")) {
+      return;
     }
-
-    let tests = readPublicTests();
-    let savedTest = null;
-    if (editingTestId === null) {
-      const newTest = {
-        id: Date.now(),
-        name,
-        time,
-        type,
-        questions,
-        createdAt: new Date().toLocaleString(),
-      };
-      if (window.api && window.api.createTest) {
-        const remoteTest = {
-          name,
-          time,
-          type,
-          questions,
-          createdAt: newTest.createdAt,
-        };
-        savedTest = await saveTestRemote(remoteTest, true);
+    const testPayload = {
+      id: editingTestId === null ? Date.now() : editingTestId,
+      name,
+      time,
+      type,
+      questions,
+    };
+    try {
+      if (editingTestId === null) {
+        await window.api.createTest(testPayload);
+      } else {
+        await window.api.updateTest(testPayload);
       }
-      tests.push(savedTest || newTest);
-    } else {
-      const idx = tests.findIndex((t) => t.id === editingTestId);
-      if (idx === -1) return alert("Tahrir xatosi");
-      const updatedTest = Object.assign({}, tests[idx], {
-        name,
-        time,
-        type,
-        questions,
-      });
-      if (window.api && window.api.updateTest) {
-        savedTest = await saveTestRemote(updatedTest, false);
-      }
-      tests[idx] = savedTest || updatedTest;
+      await refreshData();
+      el("addPanel").style.display = "none";
+      clearAddPanel();
+      renderTests();
+      renderDashboard();
+      alert("Saqlandi");
+    } catch (error) {
+      console.error(error);
+      alert("Test saqlashda xatolik yuz berdi. Iltimos, qayta urinib ko'ring.");
     }
-    writePublicTests(tests);
-    if (savedTest) await syncFromServer();
-    el("addPanel").style.display = "none";
-    clearAddPanel();
-    renderTests();
-    renderDashboard();
-    alert("Saqlandi");
   }
 
   async function saveUserHandler() {
@@ -357,80 +260,61 @@
       alert("Barcha maydonlarni to'ldiring");
       return;
     }
-
-    let users = readUsers();
-    let savedUser = null;
-    if (editingUserId === null) {
-      if (users.some((user) => user.login === login)) {
-        return alert("Bu login allaqachon mavjud");
-      }
-      const newUser = {
-        id: Date.now(),
-        fullname,
-        login,
-        password,
-        status,
-        createdAt: new Date().toLocaleString(),
-      };
-      if (window.api && window.api.createUser) {
-        const remoteUser = {
+    try {
+      if (editingUserId === null) {
+        if (users.some((item) => item.login === login)) {
+          alert("Bu login allaqachon mavjud");
+          return;
+        }
+        await window.api.createUser({ fullname, login, password, status });
+      } else {
+        if (users.some((item) => item.login === login && item.id !== editingUserId)) {
+          alert("Bu login allaqachon boshqa foydalanuvchiga tegishli");
+          return;
+        }
+        await window.api.updateUser({
+          id: editingUserId,
           fullname,
           login,
           password,
           status,
-          createdAt: newUser.createdAt,
-        };
-        savedUser = await saveUserRemote(remoteUser, true);
+        });
       }
-      users.push(savedUser || newUser);
-    } else {
-      const idx = users.findIndex((user) => user.id === editingUserId);
-      if (idx === -1) return alert("Foydalanuvchi topilmadi");
-      if (
-        users.some((user) => user.login === login && user.id !== editingUserId)
-      ) {
-        return alert("Bu login allaqachon boshqa foydalanuvchiga tegishli");
-      }
-      const updatedUser = Object.assign({}, users[idx], {
-        fullname,
-        login,
-        password,
-        status,
-      });
-      if (window.api && window.api.updateUser) {
-        savedUser = await saveUserRemote(updatedUser, false);
-      }
-      users[idx] = savedUser || updatedUser;
+      await refreshData();
+      renderUsers(el("searchUsers").value.trim());
+      renderDashboard();
+      clearUserPanel();
+      el("userPanel").style.display = "none";
+      alert("Foydalanuvchi saqlandi");
+    } catch (error) {
+      console.error(error);
+      alert("Foydalanuvchi saqlashda xatolik yuz berdi. Iltimos qayta urinib ko'ring.");
     }
-    writeUsers(users);
-    if (savedUser) await syncFromServer();
-    renderUsers(el("searchUsers").value.trim());
-    renderDashboard();
-    clearUserPanel();
-    el("userPanel").style.display = "none";
-    alert("Foydalanuvchi saqlandi");
   }
 
   window.deleteUser = async function (id) {
     if (!confirm("Foydalanuvchini o'chirishni tasdiqlaysizmi?")) return;
-    if (window.api && window.api.deleteUser) {
-      await deleteUserRemote(id);
-      await syncFromServer();
+    try {
+      await window.api.deleteUser(id);
+      await refreshData();
+      renderUsers(el("searchUsers").value.trim());
+      renderDashboard();
+    } catch (error) {
+      console.error(error);
+      alert("Foydalanuvchini o'chirishda xatolik yuz berdi.");
     }
-    const users = readUsers().filter((user) => user.id !== id);
-    writeUsers(users);
-    renderUsers(el("searchUsers").value.trim());
-    renderDashboard();
   };
 
   window.editUser = function (id) {
-    const users = readUsers();
     const user = users.find((item) => item.id === id);
-    if (!user) return alert("Foydalanuvchi topilmadi");
+    if (!user) {
+      alert("Foydalanuvchi topilmadi");
+      return;
+    }
     editingUserId = user.id;
     el("uFullname").value = user.fullname;
     el("uLogin").value = user.login;
-    el("uPassword").value = user.password;
+    el("uPassword").value = user.password || "";
     el("uStatus").value = user.status;
     el("userPanelTitle").textContent = "Foydalanuvchini tahrirlash";
     el("userPanel").style.display = "block";
@@ -438,69 +322,45 @@
 
   window.deleteTest = async function (id) {
     if (!confirm("Testni o'chirishni tasdiqlaysizmi?")) return;
-    if (window.api && window.api.deleteTest) {
-      await deleteTestRemote(id);
-      await syncFromServer();
+    try {
+      await window.api.deleteTest(id);
+      await refreshData();
+      renderTests();
+      renderDashboard();
+    } catch (error) {
+      console.error(error);
+      alert("Testni o'chirishda xatolik yuz berdi.");
     }
-    const tests = readPublicTests().filter((t) => t.id !== id);
-    writePublicTests(tests);
-    renderTests();
-    renderDashboard();
   };
 
   window.editTest = function (id) {
-    const tests = readPublicTests();
-    const t = tests.find((x) => x.id === id);
-    if (!t) return alert("Topilmadi");
-    editingTestId = t.id;
-    el("tName").value = t.name;
-    el("tTime").value = t.time || 120;
-    el("tType").value = t.type || "";
+    const test = tests.find((item) => item.id === id);
+    if (!test) {
+      alert("Topilmadi");
+      return;
+    }
+    editingTestId = test.id;
+    el("tName").value = test.name;
+    el("tTime").value = test.time || 120;
+    el("tType").value = test.type || "";
     el("questionsContainer").innerHTML = "";
-    (t.questions || []).forEach((q) => addQuestionRow(q));
+    (test.questions || []).forEach((question) => addQuestionRow(question));
     el("addPanel").style.display = "block";
   };
 
-  function renderResults() {
-    const list = el("resultsList");
-    const results = readResults();
-    if (!results.length) {
-      list.innerHTML = '<div class="panel">Natija topilmadi</div>';
-      return;
-    }
-    list.innerHTML = results
-      .slice()
-      .reverse()
-      .map((r) => {
-        return `<div class="result-item"><strong>${escapeHtml(
-          r.fullname || r.student || "Anon",
-        )}</strong> � ${escapeHtml(r.test || "")} � <span style="font-weight:700">${escapeHtml(
-          String(r.percent || r.score || 0),
-        )}%</span> � ${escapeHtml(String(r.time || ""))} � <span style="color:var(--muted)">${escapeHtml(
-          r.date || "",
-        )}</span></div>`;
-      })
-      .join("");
-  }
-
   function bind() {
-    document.querySelectorAll(".nav-btn").forEach((b) =>
-      b.addEventListener("click", () => {
-        document
-          .querySelectorAll(".nav-btn")
-          .forEach((x) => x.classList.remove("active"));
-        b.classList.add("active");
-        document
-          .querySelectorAll(".page")
-          .forEach((p) => p.classList.remove("active"));
-        const page = b.dataset.page;
-        document.getElementById(page).classList.add("active");
-        el("pageTitle").textContent =
-          page.charAt(0).toUpperCase() + page.slice(1);
-        if (page === "tests") renderTests();
-        if (page === "dashboard") renderDashboard();
-        if (page === "results") renderResults();
-        if (page === "users") renderUsers(el("searchUsers").value.trim());
+    document.querySelectorAll(".nav-btn").forEach((button) =>
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".nav-btn").forEach((item) => item.classList.remove("active"));
+        button.classList.add("active");
+        document.querySelectorAll(".page").forEach((page) => page.classList.remove("active"));
+        const pageKey = button.dataset.page;
+        document.getElementById(pageKey).classList.add("active");
+        el("pageTitle").textContent = pageKey.charAt(0).toUpperCase() + pageKey.slice(1);
+        if (pageKey === "tests") renderTests();
+        if (pageKey === "dashboard") renderDashboard();
+        if (pageKey === "results") renderResults();
+        if (pageKey === "users") renderUsers(el("searchUsers").value.trim());
       }),
     );
 
@@ -526,26 +386,40 @@
       clearUserPanel();
     });
     el("saveUser").addEventListener("click", saveUserHandler);
-    el("searchUsers").addEventListener("input", (e) => {
-      renderUsers(e.target.value.trim());
+    el("searchUsers").addEventListener("input", (event) => {
+      renderUsers(event.target.value.trim());
     });
   }
 
-  function init() {
+  function subscribeToRealtimeResults() {
+    if (!window.api || !window.api.subscribeToResults || resultsSubscription) {
+      return;
+    }
+    resultsSubscription = window.api.subscribeToResults((newResult) => {
+      results.unshift(newResult);
+      renderDashboard();
+      if (document.getElementById("results").classList.contains("active")) {
+        renderResults();
+      }
+    });
+  }
+
+  async function init() {
+    await refreshData();
     renderDashboard();
     renderTests();
-    renderUsers();
     renderResults();
     bind();
-    const menu = document.getElementById("menuToggle");
-    const sidebarEl = document.getElementById("sidebar");
+    subscribeToRealtimeResults();
+    const menu = el("menuToggle");
+    const sidebarEl = el("sidebar");
     if (menu && sidebarEl) {
       menu.addEventListener("click", () => {
         sidebarEl.classList.toggle("open");
       });
-      document.addEventListener("click", (e) => {
+      document.addEventListener("click", (event) => {
         if (window.innerWidth <= 800 && sidebarEl.classList.contains("open")) {
-          if (!sidebarEl.contains(e.target) && e.target !== menu) {
+          if (!sidebarEl.contains(event.target) && event.target !== menu) {
             sidebarEl.classList.remove("open");
           }
         }
@@ -553,19 +427,46 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
-    const isLoggedIn = localStorage.getItem("admin_logged_in") === "true";
-    if (!isLoggedIn) {
-      const indexPath = window.location.pathname.includes("/html/")
-        ? "../index.html"
-        : "index.html";
-      window.location.href = indexPath;
+  window.doLogin = async function () {
+    const login = el("loginInput").value.trim();
+    const pass = el("passInput").value.trim();
+    const errorEl = el("loginError");
+    if (!login || !pass) {
+      errorEl.textContent = "Login va parolni kiriting";
       return;
     }
-    // Admin is logged in, initialize the panel
-    (async () => {
-      await syncFromServer();
+    if (!window.api || !window.api.adminLogin) {
+      errorEl.textContent = "Servisga ulanish imkoni yo'q.";
+      return;
+    }
+    try {
+      const res = await window.api.adminLogin(login, pass);
+      if (!res || !res.ok) {
+        errorEl.textContent = "Login yoki parol noto‘g‘ri";
+        return;
+      }
+      el("loginOverlay").style.display = "none";
+      el("adminLayout").style.display = "flex";
+      await init();
+    } catch (error) {
+      errorEl.textContent = "Tizimda xatolik yuz berdi";
+      console.error(error);
+    }
+  };
+
+  window.doLogout = function () {
+    if (window.api && window.api.clearAdminSession) {
+      window.api.clearAdminSession();
+    }
+    location.reload();
+  };
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const session = window.api && window.api.getAdminSession && window.api.getAdminSession();
+    if (session) {
+      el("loginOverlay").style.display = "none";
+      el("adminLayout").style.display = "flex";
       init();
-    })();
+    }
   });
 })();

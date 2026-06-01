@@ -1,59 +1,34 @@
-﻿/* Home page script: list public_tests and start test */
-(function () {
+﻿/* Home page script: list tests from Supabase and start test session */
+(async function () {
   "use strict";
 
-  function readPublic() {
-    try {
-      return JSON.parse(localStorage.getItem("public_tests") || "[]");
-    } catch (e) {
-      return [];
-    }
-  }
-
   function getCurrentUser() {
-    try {
-      return JSON.parse(localStorage.getItem("current_user") || "null");
-    } catch (e) {
-      return null;
-    }
+    return window.api && window.api.getCurrentUser ? window.api.getCurrentUser() : null;
   }
 
-  function escape(s) {
-    return String(s || "")
+  function escapeHtml(value) {
+    return String(value || "")
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
   }
 
-  function readResults() {
-    try {
-      return JSON.parse(localStorage.getItem("results") || "[]");
-    } catch (e) {
-      return [];
-    }
+  async function getTests() {
+    return window.api && window.api.getTests ? await window.api.getTests() : [];
   }
 
-  function readUsers() {
-    try {
-      return JSON.parse(localStorage.getItem("users") || "[]");
-    } catch (e) {
-      return [];
-    }
+  async function getResults() {
+    return window.api && window.api.getResults ? await window.api.getResults() : [];
   }
 
   function getDisplayName(result) {
     return result.fullname || result.login || result.userId || "Anon";
   }
 
-  function computeLeaderboard() {
-    const results = readResults();
-    const users = readUsers();
+  function computeLeaderboard(results, users) {
     const map = new Map();
-
     results.forEach((result) => {
-      const key = String(
-        result.userId || result.login || getDisplayName(result),
-      );
+      const key = String(result.userId || result.login || getDisplayName(result));
       const current = map.get(key) || {
         id: key,
         name: getDisplayName(result),
@@ -88,11 +63,11 @@
       });
   }
 
-  function renderLeaderboard() {
+  async function renderLeaderboard() {
     const list = document.getElementById("lb-list");
     if (!list) return;
-
-    const leaderboard = computeLeaderboard();
+    const [results, users] = await Promise.all([getResults(), window.api.getUsers()]);
+    const leaderboard = computeLeaderboard(results, users);
     if (!leaderboard.length) {
       list.innerHTML = `
         <div class="lb-row">
@@ -103,37 +78,37 @@
         </div>`;
       return;
     }
-
     const medals = ["🥇", "🥈", "🥉"];
     list.innerHTML = leaderboard
-      .map((p) => {
+      .map((item) => {
         const rank =
-          p.rank <= 3
-            ? `<span class="medal">${medals[p.rank - 1]}</span>`
-            : `<span class="lb-rank">${p.rank}</span>`;
+          item.rank <= 3
+            ? `<span class="medal">${medals[item.rank - 1]}</span>`
+            : `<span class="lb-rank">${item.rank}</span>`;
         return `
           <div class="lb-row">
             ${rank}
-            <div class="lb-avatar">${escape(p.name.slice(0, 2).toUpperCase())}</div>
+            <div class="lb-avatar">${escapeHtml(item.name.slice(0, 2).toUpperCase())}</div>
             <div class="lb-info">
-              <div class="lb-name">${escape(p.name)}</div>
-              <div class="lb-sub">${p.tests} test · o'rtacha ${p.score}%</div>
+              <div class="lb-name">${escapeHtml(item.name)}</div>
+              <div class="lb-sub">${item.tests} test · o'rtacha ${item.score}%</div>
             </div>
-            <div class="lb-score">${p.score}%</div>
+            <div class="lb-score">${item.score}%</div>
           </div>`;
       })
       .join("");
   }
 
-  function renderStats() {
-    const users = readUsers();
+  async function renderStats() {
     const totalUsersEl = document.getElementById("totalUsers");
-    if (totalUsersEl) totalUsersEl.textContent = String(users.length);
+    if (!totalUsersEl || !window.api || !window.api.getUsers) return;
+    const users = await window.api.getUsers();
+    totalUsersEl.textContent = String(users.length);
   }
 
   async function sendHeartbeat() {
     try {
-      const sessionId = localStorage.getItem("presence_session") || null;
+      const sessionId = sessionStorage.getItem("presence_session") || null;
       const body = sessionId ? { sessionId } : {};
       const resp = await fetch("/api/presence/heartbeat", {
         method: "POST",
@@ -143,7 +118,7 @@
       if (!resp.ok) return;
       const data = await resp.json();
       if (data && data.sessionId) {
-        localStorage.setItem("presence_session", data.sessionId);
+        sessionStorage.setItem("presence_session", data.sessionId);
       }
     } catch (e) {
       // ignore
@@ -173,18 +148,14 @@
 
   async function render() {
     const grid = document.getElementById("testsGrid");
-    const tests =
-      window.api && window.api.getTests
-        ? await window.api.getTests()
-        : readPublic();
+    const tests = await getTests();
     const currentUser = getCurrentUser();
-    const allResults = readResults();
+    const allResults = await getResults();
     const completedSet = new Set(
       (currentUser
         ? allResults.filter(
             (r) =>
-              String(r.userId) === String(currentUser.id) ||
-              r.login === currentUser.login,
+              String(r.userId) === String(currentUser.id) || r.login === currentUser.login,
           )
         : allResults
       ).map((r) => String(r.test)),
@@ -194,49 +165,49 @@
       return;
     }
     grid.innerHTML = tests
-      .map((t) => {
-        const isCompleted = completedSet.has(String(t.name));
+      .map((test) => {
+        const isCompleted = completedSet.has(String(test.name));
         return `
         <div class="card">
-          <h3>${escape(t.name)}</h3>
-          <div class="meta">Savollar: ${(t.questions || []).length} — Vaqt: ${t.time || 0} min — Turi: ${escape(t.type || "")}</div>
+          <h3>${escapeHtml(test.name)}</h3>
+          <div class="meta">Savollar: ${(test.questions || []).length} — Vaqt: ${test.time || 0} min — Turi: ${escapeHtml(test.type || "")}</div>
           <div style="margin-top:10px">
-            ${isCompleted ? `<button class="btn" disabled>Ishlab bo'lgan</button>` : `<button class="btn" data-id="${t.id}">Testni boshlash</button>`}
+            ${isCompleted ? `<button class="btn" disabled>Ishlab bo'lgan</button>` : `<button class="btn" data-id="${test.id}">Testni boshlash</button>`}
           </div>
         </div>`;
       })
       .join("");
 
-    const testUrl = window.location.pathname.includes("/html/")
-      ? "../test.html"
-      : "test.html";
-    grid.querySelectorAll("button[data-id]").forEach((b) =>
-      b.addEventListener("click", () => {
-        const id = b.dataset.id;
-        localStorage.setItem("active_test_id", String(id));
+    const testUrl = window.location.pathname.includes("/html/") ? "../test.html" : "test.html";
+    grid.querySelectorAll("button[data-id]").forEach((button) =>
+      button.addEventListener("click", () => {
+        const id = button.dataset.id;
+        if (window.api && window.api.setActiveTestId) {
+          window.api.setActiveTestId(id);
+        } else {
+          sessionStorage.setItem("matematika_active_test", String(id));
+        }
         window.location.href = testUrl;
       }),
     );
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  document.addEventListener("DOMContentLoaded", async () => {
     const user = getCurrentUser();
     if (!user) {
-      const indexPath = window.location.pathname.includes("/html/")
-        ? "../index.html"
-        : "index.html";
+      const indexPath = window.location.pathname.includes("/html/") ? "../index.html" : "index.html";
       window.location.href = indexPath;
       return;
     }
 
     const userCodeBtn = document.getElementById("userCodeBtn");
     if (userCodeBtn) {
-      userCodeBtn.innerHTML = `${escape(user.login || user.fullname || "Foydalanuvchi")} <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" /></svg>`;
+      userCodeBtn.innerHTML = `${escapeHtml(user.login || user.fullname || "Foydalanuvchi")} <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" /></svg>`;
     }
 
-    render();
-    renderLeaderboard();
-    renderStats();
+    await render();
+    await renderLeaderboard();
+    await renderStats();
     startPresenceLoops();
   });
 })();

@@ -11,7 +11,24 @@
     <link rel="stylesheet" href="admin-style.css" />
   </head>
   <body>
-    <div class="container" id="adminLayout">
+    <div class="login-overlay" id="loginOverlay">
+      <div class="login-card">
+        <h2>Admin kirish</h2>
+        <input id="loginInput" placeholder="Login" value="admin" />
+        <input
+          id="passInput"
+          placeholder="Parol"
+          type="password"
+          value="12345"
+        />
+        <div class="row">
+          <button onclick="doLogin()" class="btn">Kirish</button>
+        </div>
+        <div id="loginError" class="error"></div>
+      </div>
+    </div>
+
+    <div class="container" id="adminLayout" style="display: none">
       <aside class="sidebar" id="sidebar">
         <div class="brand">Online Test</div>
         <nav>
@@ -133,6 +150,7 @@
       </main>
     </div>
 
+    <script type="module" src="api.js"></script>
     <script src="admin-app.js"></script>
   </body>
 </html>

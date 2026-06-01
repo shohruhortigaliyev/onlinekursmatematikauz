@@ -85,15 +85,18 @@ async function loginAdmin() {
   }
 
   try {
+    console.log("Admin login uriniy:", { login, pass });
     const res = await window.api.adminLogin(login, pass);
+    console.log("Admin login natijasi:", res);
     if (!res || !res.ok) {
-      return showError("adminError", "Login yoki parol noto‘g‘ri!");
+      return showError("adminError", "Login yoki parol noto'g'ri!");
     }
     showSuccess("adminError", "✅ Admin paneliga kirildi!");
     setTimeout(() => {
       window.location.href = "admin.html";
     }, 600);
   } catch (error) {
+    console.error("Admin login xatolik:", error);
     showError(
       "adminError",
       "Tizimga ulanishda xatolik. Iltimos, qayta urinib ko'ring.",

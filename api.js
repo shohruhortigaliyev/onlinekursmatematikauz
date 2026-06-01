@@ -179,7 +179,20 @@ window.api = {
   },
 
   async adminLogin(login, password) {
-    await this.ensureDefaultAdmin();
+    // Avval default admin-ni tekshir
+    if (login === DEFAULT_ADMIN.login && password === DEFAULT_ADMIN.password) {
+      console.log("✅ Default admin login muvaffaqiyatli");
+      this.setAdminSession({ login: DEFAULT_ADMIN.login, id: "default-admin" });
+      return { ok: true, admin: { login: DEFAULT_ADMIN.login } };
+    }
+
+    // Supabase-da qidirish
+    try {
+      await this.ensureDefaultAdmin();
+    } catch (e) {
+      console.warn("ensureDefaultAdmin xatolik:", e);
+    }
+
     const { data, error } = await supabase
       .from("admins")
       .select("*")
@@ -187,10 +200,18 @@ window.api = {
       .eq("password", password)
       .limit(1)
       .single();
+
     if (error && error.code !== "PGRST116") {
-      return { ok: false, error };
+      console.error("Admin login xatolik:", error);
+      return { ok: false, error: error.message };
     }
-    if (!data) return { ok: false };
+    if (!data) {
+      console.warn("Admin topilmadi Supabase-da:", { login, password });
+      // Debug: tekshir barcha admin ma'lumotlarni
+      const { data: allAdmins } = await supabase.from("admins").select("*");
+      console.debug("Barcha admins:", allAdmins);
+      return { ok: false };
+    }
     this.setAdminSession({ login: data.login, id: data.id });
     return { ok: true, admin: data };
   },
@@ -367,20 +388,42 @@ window.api = {
 
   async ensureDefaultAdmin() {
     try {
-      await safeUpsert(
-        "admins",
-        [
+      // Avval tekshir admin mavjudmi
+      const { data: existing } = await supabase
+        .from("admins")
+        .select("*")
+        .eq("login", DEFAULT_ADMIN.login)
+        .limit(1)
+        .single();
+
+      if (existing) {
+        console.debug("Admin allaqachon mavjud:", existing);
+        return;
+      }
+
+      // Agar yo'q bo'lsa, yangi admin qo'sh
+      const { data: created, error } = await supabase
+        .from("admins")
+        .insert([
           {
             login: DEFAULT_ADMIN.login,
             password: DEFAULT_ADMIN.password,
             fullname: DEFAULT_ADMIN.fullname,
             created_at: new Date().toISOString(),
           },
-        ],
-        "login",
-      );
+        ])
+        .select("*")
+        .single();
+
+      if (error) {
+        console.error("Admin yaratishda xatolik:", error);
+        throw error;
+      }
+      console.debug("Admin muvaffaqiyatli yaratildi:", created);
     } catch (error) {
-      // ignore if table is not ready or unique constraint is missing
+      console.error("ensureDefaultAdmin xatolik:", error);
+      // Agar table yo'q bo'lsa, o'tib yuboramiz
+      throw error;
     }
   },
 };

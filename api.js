@@ -36,12 +36,20 @@ function normalizeUser(row) {
 
 function normalizeTest(row) {
   if (!row) return null;
+  let questions = row.questions || [];
+  if (typeof questions === "string") {
+    try {
+      questions = JSON.parse(questions);
+    } catch (error) {
+      questions = [];
+    }
+  }
   return {
     id: row.id,
     name: row.name,
     time: row.time,
     type: row.type,
-    questions: row.questions || [],
+    questions: questions || [],
     createdAt: row.created_at || row.createdAt || null,
   };
 }
@@ -64,13 +72,18 @@ function normalizeResult(row) {
 }
 
 function userToDb(user) {
-  return {
+  const payload = {
     fullname: user.fullname,
-    code: user.login,
-    password: user.password,
     status: user.status || "Faol",
     created_at: user.createdAt || new Date().toISOString(),
   };
+  if (user.login !== undefined) {
+    payload.code = user.login;
+  }
+  if (user.password !== undefined && user.password !== "") {
+    payload.password = user.password;
+  }
+  return payload;
 }
 
 function testToDb(test) {
@@ -106,6 +119,166 @@ async function safeUpsert(table, payload, onConflict) {
   });
   if (error) throw error;
   return data;
+}
+
+function normalizeDbError(error) {
+  return String(error?.message || "").toLowerCase();
+}
+
+async function safeSelectAll(table) {
+  let response = await supabase.from(table).select("*").order("created_at", {
+    ascending: false,
+  });
+  if (!response.error) return response.data;
+  const message = normalizeDbError(response.error);
+  if (
+    message.includes('column "created_at" not found') ||
+    message.includes("unknown column") ||
+    message.includes("invalid column") ||
+    message.includes('property "created_at" does not exist')
+  ) {
+    response = await supabase.from(table).select("*").order("id", {
+      ascending: false,
+    });
+    if (response.error) throw response.error;
+    return response.data;
+  }
+  throw response.error;
+}
+
+function getUnknownColumn(errorMessage) {
+  const match = errorMessage.match(/column "([^"]+)"/);
+  return match ? match[1] : null;
+}
+
+async function insertWithFallback(table, payload) {
+  let current = { ...payload };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data, error } = await supabase
+      .from(table)
+      .insert([current])
+      .select("*")
+      .single();
+    if (!error) return data;
+
+    const message = normalizeDbError(error);
+    if (!message.includes("column") && !message.includes("unknown")) {
+      throw error;
+    }
+
+    let changed = false;
+    if (table === "users") {
+      if (current.code && current.login === undefined) {
+        current.login = current.code;
+        changed = true;
+      }
+      if (current.login && current.code === undefined) {
+        current.code = current.login;
+        changed = true;
+      }
+    }
+    if (table === "tests") {
+      if (current.questions && Array.isArray(current.questions)) {
+        current.questions = JSON.stringify(current.questions);
+        changed = true;
+      }
+    }
+    const unknown = getUnknownColumn(message);
+    if (unknown && current.hasOwnProperty(unknown)) {
+      delete current[unknown];
+      changed = true;
+    }
+
+    if (!changed) throw error;
+  }
+  throw new Error(`Failed to insert into ${table}`);
+}
+
+async function updateWithFallback(table, payload, id) {
+  let current = { ...payload };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data, error } = await supabase
+      .from(table)
+      .insert([current])
+      .select("*")
+      .single();
+    if (!error) return data;
+
+    const message = normalizeDbError(error);
+    if (!message.includes("column") && !message.includes("unknown")) {
+      throw error;
+    }
+
+    let changed = false;
+    if (table === "users") {
+      if (current.code && current.login === undefined) {
+        current.login = current.code;
+        changed = true;
+      }
+      if (current.login && current.code === undefined) {
+        current.code = current.login;
+        changed = true;
+      }
+    }
+    if (table === "tests") {
+      if (current.questions && Array.isArray(current.questions)) {
+        current.questions = JSON.stringify(current.questions);
+        changed = true;
+      }
+    }
+    const unknown = getUnknownColumn(message);
+    if (unknown && current.hasOwnProperty(unknown)) {
+      delete current[unknown];
+      changed = true;
+    }
+
+    if (!changed) throw error;
+  }
+  throw new Error(`Failed to insert into ${table}`);
+}
+
+async function updateWithFallback(table, payload, id) {
+  let current = { ...payload };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data, error } = await supabase
+      .from(table)
+      .update(current)
+      .eq("id", id)
+      .select("*")
+      .single();
+    if (!error) return data;
+
+    const message = normalizeDbError(error);
+    if (!message.includes("column") && !message.includes("unknown")) {
+      throw error;
+    }
+
+    let changed = false;
+    if (table === "users") {
+      if (current.code && current.login === undefined) {
+        current.login = current.code;
+        changed = true;
+      }
+      if (current.login && current.code === undefined) {
+        current.code = current.login;
+        changed = true;
+      }
+    }
+    if (table === "tests") {
+      if (current.questions && Array.isArray(current.questions)) {
+        current.questions = JSON.stringify(current.questions);
+        changed = true;
+      }
+    }
+    const unknown = getUnknownColumn(message);
+    if (unknown && current.hasOwnProperty(unknown)) {
+      delete current[unknown];
+      changed = true;
+    }
+
+    if (!changed) throw error;
+  }
+  throw new Error(`Failed to update ${table}`);
 }
 
 window.api = {
@@ -162,120 +335,131 @@ window.api = {
     if (!login || !password) {
       return { ok: false, error: "empty" };
     }
-    const { data, error } = await supabase
+    let data = null;
+    let error = null;
+
+    ({ data, error } = await supabase
       .from("users")
       .select("*")
       .eq("code", login)
       .eq("password", password)
       .limit(1)
-      .single();
+      .single());
     if (error && error.code !== "PGRST116") {
-      console.error("Login xatolik:", error);
       return { ok: false, error };
     }
     if (!data) {
-      console.warn("Foydalanuvchi topilmadi:", login);
-      return { ok: false };
+      ({ data, error } = await supabase
+        .from("users")
+        .select("*")
+        .eq("login", login)
+        .eq("password", password)
+        .limit(1)
+        .single());
+      if (error && error.code !== "PGRST116") {
+        return { ok: false, error };
+      }
     }
+    if (!data) return { ok: false };
     const user = normalizeUser(data);
     this.setSessionUser(user);
     return { ok: true, user };
   },
 
   async adminLogin(login, password) {
-    // Avval default admin-ni tekshir
-    if (login === DEFAULT_ADMIN.login && password === DEFAULT_ADMIN.password) {
-      console.log("✅ Default admin login muvaffaqiyatli");
-      this.setAdminSession({ login: DEFAULT_ADMIN.login, id: "default-admin" });
-      return { ok: true, admin: { login: DEFAULT_ADMIN.login } };
+    if (!login || !password) {
+      return { ok: false, error: "empty" };
     }
 
-    // Supabase-da qidirish
-    try {
-      await this.ensureDefaultAdmin();
-    } catch (e) {
-      console.warn("ensureDefaultAdmin xatolik:", e);
+    await this.ensureDefaultAdmin();
+    let data = null;
+    let lastError = null;
+
+    const fields = ["login", "code"];
+    for (const field of fields) {
+      const result = await supabase
+        .from("admins")
+        .select("*")
+        .eq(field, login)
+        .eq("password", password)
+        .limit(1)
+        .single();
+      if (result.error && result.error.code !== "PGRST116") {
+        lastError = result.error;
+        continue;
+      }
+      if (result.data) {
+        data = result.data;
+        lastError = null;
+        break;
+      }
     }
 
-    const { data, error } = await supabase
-      .from("admins")
-      .select("*")
-      .eq("login", login)
-      .eq("password", password)
-      .limit(1)
-      .single();
-
-    if (error && error.code !== "PGRST116") {
-      console.error("Admin login xatolik:", error);
-      return { ok: false, error: error.message };
-    }
     if (!data) {
-      console.warn("Admin topilmadi Supabase-da:", { login, password });
-      // Debug: tekshir barcha admin ma'lumotlarni
-      const { data: allAdmins } = await supabase.from("admins").select("*");
-      console.debug("Barcha admins:", allAdmins);
+      if (
+        login === DEFAULT_ADMIN.login &&
+        password === DEFAULT_ADMIN.password
+      ) {
+        const admin = {
+          login: DEFAULT_ADMIN.login,
+          id: "default-admin",
+          fullname: DEFAULT_ADMIN.fullname,
+        };
+        this.setAdminSession(admin);
+        return { ok: true, admin };
+      }
+      if (lastError) {
+        console.error("Admin login failed:", lastError);
+        return { ok: false, error: lastError };
+      }
       return { ok: false };
     }
-    this.setAdminSession({ login: data.login, id: data.id });
+
+    this.setAdminSession({ login: data.login || data.code, id: data.id });
     return { ok: true, admin: data };
   },
 
   async getUsers() {
-    const { data, error } = await supabase
-      .from("users")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
+    const data = await safeSelectAll("users");
     return (data || []).map(normalizeUser);
   },
 
   async getUserByCode(login) {
-    const { data, error } = await supabase
+    let data = null;
+    let error = null;
+
+    ({ data, error } = await supabase
       .from("users")
       .select("*")
       .eq("code", login)
       .limit(1)
-      .single();
+      .single());
     if (error && error.code !== "PGRST116") {
-      console.error("getUserByCode xatolik:", error);
       throw error;
+    }
+    if (!data) {
+      ({ data, error } = await supabase
+        .from("users")
+        .select("*")
+        .eq("login", login)
+        .limit(1)
+        .single());
+      if (error && error.code !== "PGRST116") {
+        throw error;
+      }
     }
     return normalizeUser(data);
   },
 
   async createUser(user) {
     const payload = userToDb(user);
-    console.log("userToDb payload (create):", payload);
-    const { data, error } = await supabase
-      .from("users")
-      .insert([payload])
-      .select("*")
-      .single();
-    if (error) {
-      console.error("createUser xatolik:", error);
-      throw new Error(
-        `Foydalanuvchi yaratishda xatolik: ${error.message || error.code}`,
-      );
-    }
+    const data = await insertWithFallback("users", payload);
     return normalizeUser(data);
   },
 
   async updateUser(user) {
     const payload = userToDb(user);
-    console.log("userToDb payload (update):", payload);
-    console.log("ID orqali update:", user.id);
-    const { data, error } = await supabase
-      .from("users")
-      .update(payload)
-      .eq("id", user.id)
-      .select("*")
-      .single();
-    if (error) {
-      console.error("updateUser xatolik:", error);
-      throw new Error(
-        `Foydalanuvchi yangilashda xatolik: ${error.message || error.code}`,
-      );
-    }
+    const data = await updateWithFallback("users", payload, user.id);
     return normalizeUser(data);
   },
 
@@ -300,34 +484,19 @@ window.api = {
   },
 
   async getTests() {
-    const { data, error } = await supabase
-      .from("tests")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
+    const data = await safeSelectAll("tests");
     return (data || []).map(normalizeTest);
   },
 
   async createTest(test) {
     const payload = testToDb(test);
-    const { data, error } = await supabase
-      .from("tests")
-      .insert([payload])
-      .select("*")
-      .single();
-    if (error) throw error;
+    const data = await insertWithFallback("tests", payload);
     return normalizeTest(data);
   },
 
   async updateTest(test) {
     const payload = testToDb(test);
-    const { data, error } = await supabase
-      .from("tests")
-      .update(payload)
-      .eq("id", test.id)
-      .select("*")
-      .single();
-    if (error) throw error;
+    const data = await updateWithFallback("tests", payload, test.id);
     return normalizeTest(data);
   },
 
@@ -343,11 +512,7 @@ window.api = {
   },
 
   async getResults() {
-    const { data, error } = await supabase
-      .from("results")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
+    const data = await safeSelectAll("results");
     return (data || []).map(normalizeResult);
   },
 
@@ -406,42 +571,20 @@ window.api = {
 
   async ensureDefaultAdmin() {
     try {
-      // Avval tekshir admin mavjudmi
-      const { data: existing } = await supabase
-        .from("admins")
-        .select("*")
-        .eq("login", DEFAULT_ADMIN.login)
-        .limit(1)
-        .single();
-
-      if (existing) {
-        console.debug("Admin allaqachon mavjud:", existing);
-        return;
-      }
-
-      // Agar yo'q bo'lsa, yangi admin qo'sh
-      const { data: created, error } = await supabase
-        .from("admins")
-        .insert([
+      await safeUpsert(
+        "admins",
+        [
           {
             login: DEFAULT_ADMIN.login,
             password: DEFAULT_ADMIN.password,
             fullname: DEFAULT_ADMIN.fullname,
             created_at: new Date().toISOString(),
           },
-        ])
-        .select("*")
-        .single();
-
-      if (error) {
-        console.error("Admin yaratishda xatolik:", error);
-        throw error;
-      }
-      console.debug("Admin muvaffaqiyatli yaratildi:", created);
+        ],
+        "login",
+      );
     } catch (error) {
-      console.error("ensureDefaultAdmin xatolik:", error);
-      // Agar table yo'q bo'lsa, o'tib yuboramiz
-      throw error;
+      // ignore if table is not ready or unique constraint is missing
     }
   },
 };

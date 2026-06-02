@@ -212,6 +212,7 @@
     el("uFullname").value = "";
     el("uLogin").value = "";
     el("uPassword").value = "";
+    el("uPassword").placeholder = "";
     el("uStatus").value = "";
     el("userPanelTitle").textContent = "Yangi foydalanuvchi";
     editingUserId = null;
@@ -230,12 +231,14 @@
       return;
     }
     const testPayload = {
-      id: editingTestId === null ? Date.now() : editingTestId,
       name,
       time,
       type,
       questions,
     };
+    if (editingTestId !== null) {
+      testPayload.id = editingTestId;
+    }
     try {
       if (editingTestId === null) {
         await window.api.createTest(testPayload);
@@ -250,7 +253,11 @@
       alert("Saqlandi");
     } catch (error) {
       console.error(error);
-      alert("Test saqlashda xatolik yuz berdi. Iltimos, qayta urinib ko'ring.");
+      alert(
+        "Test saqlashda xatolik yuz berdi: " +
+          (error?.message || error || "Noma'lum xato") +
+          ". Iltimos, qayta urinib ko'ring.",
+      );
     }
   }
 
@@ -259,7 +266,7 @@
     const login = el("uLogin").value.trim();
     const password = el("uPassword").value.trim();
     const status = el("uStatus").value.trim() || "Faol";
-    if (!fullname || !login || !password) {
+    if (!fullname || !login || (editingUserId === null && !password)) {
       alert("Barcha maydonlarni to'ldiring");
       return;
     }
@@ -269,12 +276,6 @@
           alert("Bu login allaqachon mavjud");
           return;
         }
-        console.log("Yangi foydalanuvchi yaratilmoqda:", {
-          fullname,
-          login,
-          password,
-          status,
-        });
         await window.api.createUser({ fullname, login, password, status });
       } else {
         if (
@@ -285,20 +286,9 @@
           alert("Bu login allaqachon boshqa foydalanuvchiga tegishli");
           return;
         }
-        console.log("Foydalanuvchi yangilangichi:", {
-          id: editingUserId,
-          fullname,
-          login,
-          password,
-          status,
-        });
-        await window.api.updateUser({
-          id: editingUserId,
-          fullname,
-          login,
-          password,
-          status,
-        });
+        const payload = { id: editingUserId, fullname, login, status };
+        if (password) payload.password = password;
+        await window.api.updateUser(payload);
       }
       await refreshData();
       renderUsers(el("searchUsers").value.trim());
@@ -307,8 +297,12 @@
       el("userPanel").style.display = "none";
       alert("Foydalanuvchi saqlandi");
     } catch (error) {
-      console.error("Foydalanuvchi saqlashda xatolik:", error);
-      alert("Xatolik: " + (error.message || "Noma'lum xatolik yuz berdi"));
+      console.error(error);
+      alert(
+        "Foydalanuvchi saqlashda xatolik yuz berdi: " +
+          (error?.message || error || "Noma'lum xato") +
+          ". Iltimos qayta urinib ko'ring.",
+      );
     }
   }
 
@@ -334,7 +328,9 @@
     editingUserId = user.id;
     el("uFullname").value = user.fullname;
     el("uLogin").value = user.login;
-    el("uPassword").value = user.password || "";
+    el("uPassword").value = "";
+    el("uPassword").placeholder =
+      "Agar parolni o'zgartirmasangiz, bo'sh qoldiring";
     el("uStatus").value = user.status;
     el("userPanelTitle").textContent = "Foydalanuvchini tahrirlash";
     el("userPanel").style.display = "block";

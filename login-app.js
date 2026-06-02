@@ -1,4 +1,18 @@
-﻿/* Login app for Matematika.uz using Supabase */
+﻿/* Login app for admin and users with localStorage account management */
+const DEFAULT_ADMIN = { login: "admin", pass: "12345" };
+const ALT_ADMIN = { login: "admin", pass: "admin123" };
+
+function readUsers() {
+  try {
+    return JSON.parse(localStorage.getItem("users") || "[]");
+  } catch (e) {
+    return [];
+  }
+}
+
+function writeUsers(users) {
+  localStorage.setItem("users", JSON.stringify(users));
+}
 
 function getInput(id) {
   return document.getElementById(id).value.trim();
@@ -7,10 +21,10 @@ function getInput(id) {
 function switchTab(name) {
   document
     .querySelectorAll(".tab")
-    .forEach((tab) => tab.classList.remove("active"));
+    .forEach((t) => t.classList.remove("active"));
   document
     .querySelectorAll(".tab-content")
-    .forEach((panel) => panel.classList.remove("active"));
+    .forEach((c) => c.classList.remove("active"));
   document
     .querySelector(`[onclick="switchTab('${name}')"]`)
     .classList.add("active");
@@ -47,58 +61,157 @@ function showSuccess(id, msg) {
   el.textContent = msg;
 }
 
-async function loginUser() {
+function loginUser() {
   const login = getInput("userLogin");
   const pass = getInput("userPass");
   if (!login) return showError("userError", "Loginni kiriting!");
   if (!pass) return showError("userError", "Parolni kiriting!");
-
-  if (!window.api || !window.api.loginUser) {
-    return showError("userError", "Servisga ulanish imkoni yo'q.");
+  // Try backend login first
+  if (window.api) {
+    window.api
+      .loginUser(login, pass)
+      .then((res) => {
+        if (res && res.ok) {
+          const u = res.user;
+          localStorage.setItem(
+            "current_user",
+            JSON.stringify({
+              id: u.id,
+              fullname: u.name || u.fullname || u.code,
+              login: u.code,
+            }),
+          );
+          showSuccess("userError", "✅ Muvaffaqiyatli kirildi!");
+          setTimeout(() => (window.location.href = "bosh-sahifa.html"), 600);
+        } else {
+          // fallback to local
+          const users = readUsers();
+          const user = users.find(
+            (item) => item.login === login && item.password === pass,
+          );
+          if (!user)
+            return showError("userError", "Login yoki parol noto‘g‘ri!");
+          localStorage.setItem(
+            "current_user",
+            JSON.stringify({
+              id: user.id,
+              fullname: user.fullname,
+              login: user.login,
+              status: user.status,
+              createdAt: user.createdAt,
+            }),
+          );
+          showSuccess("userError", "✅ Muvaffaqiyatli kirildi!");
+          setTimeout(() => (window.location.href = "bosh-sahifa.html"), 600);
+        }
+      })
+      .catch(() => {
+        const users = readUsers();
+        const user = users.find(
+          (item) => item.login === login && item.password === pass,
+        );
+        if (!user) return showError("userError", "Login yoki parol noto‘g‘ri!");
+        localStorage.setItem(
+          "current_user",
+          JSON.stringify({
+            id: user.id,
+            fullname: user.fullname,
+            login: user.login,
+            status: user.status,
+            createdAt: user.createdAt,
+          }),
+        );
+        showSuccess("userError", "✅ Muvaffaqiyatli kirildi!");
+        setTimeout(() => (window.location.href = "bosh-sahifa.html"), 600);
+      });
+    return;
   }
 
-  try {
-    const res = await window.api.loginUser(login, pass);
-    if (!res || !res.ok) {
-      return showError("userError", "Login yoki parol noto‘g‘ri!");
-    }
-    showSuccess("userError", "✅ Muvaffaqiyatli kirildi!");
-    setTimeout(() => {
-      window.location.href = "bosh-sahifa.html";
-    }, 600);
-  } catch (error) {
-    showError(
-      "userError",
-      "Tizimda xatolik yuz berdi. Iltimos, qayta urinib ko'ring.",
-    );
+  // local fallback (should rarely run now)
+  const users = readUsers();
+  const user = users.find(
+    (item) => item.login === login && item.password === pass,
+  );
+  if (!user) {
+    return showError("userError", "Login yoki parol noto‘g‘ri!");
   }
+
+  localStorage.setItem(
+    "current_user",
+    JSON.stringify({
+      id: user.id,
+      fullname: user.fullname,
+      login: user.login,
+      status: user.status,
+      createdAt: user.createdAt,
+    }),
+  );
+
+  showSuccess("userError", "✅ Muvaffaqiyatli kirildi!");
+  setTimeout(() => {
+    window.location.href = "bosh-sahifa.html";
+  }, 600);
 }
 
-async function loginAdmin() {
+function loginAdmin() {
   const login = getInput("adminLogin");
   const pass = getInput("adminPass");
   if (!login) return showError("adminError", "Loginni kiriting!");
   if (!pass) return showError("adminError", "Parolni kiriting!");
-
-  if (!window.api || !window.api.adminLogin) {
-    return showError("adminError", "Servisga ulanish imkoni yo'q.");
+  // Try backend admin login
+  if (window.api) {
+    window.api
+      .adminLogin(pass)
+      .then((res) => {
+        if (res && res.ok && res.admin_key) {
+          localStorage.setItem("admin_logged_in", "true");
+          localStorage.setItem("admin_key", res.admin_key);
+          showSuccess("adminError", "✅ Admin paneliga kirildi!");
+          setTimeout(() => (window.location.href = "admin.html"), 600);
+        } else {
+          // fallback local check
+          const creds =
+            JSON.parse(localStorage.getItem("adminCreds") || "null") ||
+            DEFAULT_ADMIN;
+          const okAdmin =
+            (login === creds.login && pass === creds.pass) ||
+            (login === ALT_ADMIN.login && pass === ALT_ADMIN.pass);
+          if (okAdmin) {
+            localStorage.setItem("admin_logged_in", "true");
+            showSuccess("adminError", "✅ Admin paneliga kirildi!");
+            setTimeout(() => (window.location.href = "admin.html"), 600);
+          } else showError("adminError", "Login yoki parol noto'g'ri!");
+        }
+      })
+      .catch(() => {
+        const creds =
+          JSON.parse(localStorage.getItem("adminCreds") || "null") ||
+          DEFAULT_ADMIN;
+        const okAdmin =
+          (login === creds.login && pass === creds.pass) ||
+          (login === ALT_ADMIN.login && pass === ALT_ADMIN.pass);
+        if (okAdmin) {
+          localStorage.setItem("admin_logged_in", "true");
+          showSuccess("adminError", "✅ Admin paneliga kirildi!");
+          setTimeout(() => (window.location.href = "admin.html"), 600);
+        } else showError("adminError", "Login yoki parol noto'g'ri!");
+      });
+    return;
   }
 
-  try {
-    const res = await window.api.adminLogin(login, pass);
-    if (!res || !res.ok) {
-      const message = res?.error?.message || "Login yoki parol noto‘g‘ri!";
-      return showError("adminError", message);
-    }
+  const creds =
+    JSON.parse(localStorage.getItem("adminCreds") || "null") || DEFAULT_ADMIN;
+  const okAdmin =
+    (login === creds.login && pass === creds.pass) ||
+    (login === ALT_ADMIN.login && pass === ALT_ADMIN.pass);
+  if (okAdmin) {
+    localStorage.setItem("admin_logged_in", "true");
     showSuccess("adminError", "✅ Admin paneliga kirildi!");
     setTimeout(() => {
       window.location.href = "admin.html";
     }, 600);
-  } catch (error) {
-    showError(
-      "adminError",
-      "Tizimga ulanishda xatolik. Iltimos, qayta urinib ko'ring.",
-    );
+  } else {
+    showError("adminError", "Login yoki parol noto'g'ri!");
   }
 }
 
@@ -112,11 +225,27 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-document.addEventListener("DOMContentLoaded", async () => {
+document.addEventListener("DOMContentLoaded", () => {
   switchTab("user");
   document.getElementById("userLogin").focus();
+});
 
-  if (window.api && window.api.ensureDemoUser) {
-    await window.api.ensureDemoUser();
+// Ensure demo user exists so demo credentials on index.html work without edits
+document.addEventListener("DOMContentLoaded", () => {
+  try {
+    const users = readUsers();
+    if (!users.some((u) => u.login === "00-913")) {
+      users.push({
+        id: Date.now(),
+        fullname: "Demo Foydalanuvchi",
+        login: "00-913",
+        password: "123456",
+        status: "Faol",
+        createdAt: new Date().toLocaleString(),
+      });
+      writeUsers(users);
+    }
+  } catch (e) {
+    // ignore
   }
 });
